@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="NPK Smart Cacao: plataforma IoT para monitoreo real de sensores NPK, meteorología, mapas y reportes para Chigorodó." />
-  <title>NPK Smart Cacao | Monitoreo real IoT</title>
+  <meta name="description" content="NPK Smart Cacao: frontend IoT para monitoreo real de sensores ESP32 NPK en Chigorodó." />
+  <title>NPK Smart Cacao | Frontend IoT</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -17,7 +17,7 @@
       <span class="logo-mark">NPK</span>
       <div class="loader-ring"></div>
     </div>
-    <p>Preparando conexión con sensores IoT y clima real de Chigorodó...</p>
+    <p>Conectando frontend con datos reales del backend...</p>
   </div>
 
   <div class="toast-zone" id="toastZone" aria-live="polite"></div>
@@ -25,20 +25,17 @@
   <header class="landing-nav" id="landingNav">
     <a href="#inicio" class="brand brand-landing" aria-label="NPK Smart Cacao">
       <span class="brand-icon">◈</span>
-      <span>
-        <strong>NPK Smart Cacao</strong>
-        <small>Monitoreo real IoT</small>
-      </span>
+      <span><strong>NPK Smart Cacao</strong><small>Frontend IoT</small></span>
     </a>
     <nav class="landing-links" aria-label="Navegación principal">
+      <a href="#inicio">Inicio</a>
       <a href="#beneficios">Beneficios</a>
-      <a href="#tecnologia">Tecnología</a>
       <a href="#plataforma">Plataforma</a>
       <a href="#dashboard" data-open-app="dashboard">Dashboard</a>
     </nav>
     <div class="nav-actions">
       <button class="icon-button" id="landingThemeToggle" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
-      <button class="btn btn-primary" data-open-app="dashboard">Explorar</button>
+      <button class="btn btn-primary" data-open-app="dashboard">Entrar</button>
     </div>
     <button class="mobile-menu-btn" id="mobileLandingMenu" aria-label="Abrir menú">☰</button>
   </header>
@@ -49,132 +46,90 @@
       <div class="hero-grid">
         <article class="hero-copy reveal">
           <div class="eyebrow"><span class="pulse-dot"></span> IoT + Agricultura de precisión</div>
-          <h1>Centro inteligente para monitoreo NPK de cultivos de cacao en tiempo real.</h1>
-          <p class="hero-lead">
-            Plataforma frontend para recibir datos reales del backend, visualizar sensores ESP32 por ID, revisar parcelas, consultar clima real y generar informes técnicos.
-          </p>
+          <h1>Monitoreo real de NPK, humedad del suelo y temperatura del aire.</h1>
+          <p class="hero-lead">La página funciona como frontend: consulta el backend en Render y muestra únicamente los sensores ESP32 que el backend entregue.</p>
           <div class="hero-actions">
-            <button class="btn btn-primary btn-xl" data-open-app="dashboard">Explorar Plataforma</button>
-            <button class="btn btn-secondary btn-xl" data-open-app="sensores">Registrar sensor ESP32</button>
-            <button class="btn btn-outline btn-xl" data-open-app="mapa">Ver Mapa de Sensores</button>
+            <button class="btn btn-primary btn-xl" data-open-app="dashboard">Ver dashboard</button>
+            <button class="btn btn-secondary btn-xl" data-open-app="sensores">Ver sensores ESP32</button>
+            <button class="btn btn-outline btn-xl" data-open-app="mapa">Ver mapa</button>
           </div>
           <div class="trust-strip">
-            <span>Backend configurable</span>
-            <span>ESP32 por ID</span>
-            <span>Parcelas por ID</span>
+            <span>Solo lectura desde backend</span>
+            <span>Soporta sensores sin lectura</span>
             <span>Clima real</span>
+            <span>Responsive</span>
           </div>
         </article>
-
-        <aside class="hero-visual reveal delay-1" aria-label="Visualización del sistema NPK Smart Cacao">
+        <aside class="hero-visual reveal delay-1" aria-label="Estado de sensores NPK">
           <div class="field-card real-mode-card">
-            <div class="field-header">
-              <span>Estado de sensores</span>
-              <strong id="heroConnectionState">Sensores no conectados</strong>
-            </div>
+            <div class="field-header"><span>Estado</span><strong id="heroConnectionState">Sensores no conectados</strong></div>
             <div class="satellite-scene no-fake-scene">
-              <span class="sensor-node node-a off" data-label="ESP32 pendiente"></span>
-              <span class="sensor-node node-b off" data-label="Sin lectura"></span>
-              <span class="sensor-node node-c off" data-label="Backend pendiente"></span>
-              <span class="sensor-node node-d off" data-label="Parcela sin datos"></span>
-              <span class="data-bubble bubble-1" id="heroSensorBubble">Registra el ID del ESP32</span>
-              <span class="data-bubble bubble-2" id="heroWeatherBubble">Clima real por Open-Meteo</span>
-              <span class="data-bubble bubble-3" id="heroAlertBubble">Sin alertas reales recibidas</span>
+              <span class="sensor-node node-a off"></span>
+              <span class="sensor-node node-b off"></span>
+              <span class="sensor-node node-c off"></span>
+              <span class="sensor-node node-d off"></span>
+              <span class="data-bubble bubble-1" id="heroSensorBubble">Esperando backend</span>
+              <span class="data-bubble bubble-2" id="heroWeatherBubble">Clima real de Chigorodó</span>
+              <span class="data-bubble bubble-3" id="heroAlertBubble">Sin alertas reales</span>
             </div>
           </div>
-          <div class="floating-panel analysis-panel">
-            <span>Analíticas</span>
-            <strong id="heroAnalyticsState">Sin datos reales</strong>
-            <p>Se activan al recibir lecturas del backend.</p>
-          </div>
-          <div class="floating-panel npk-panel">
-            <span>NPK promedio</span>
-            <strong id="heroNpkAverage">-- · -- · --</strong>
-            <p id="heroNpkMeta">Esperando sensores conectados</p>
-          </div>
+          <div class="floating-panel analysis-panel"><span>Analíticas</span><strong id="heroAnalyticsState">Sin datos reales</strong><p>Se activan con lecturas del backend.</p></div>
+          <div class="floating-panel npk-panel"><span>NPK promedio</span><strong id="heroNpkAverage">-- · -- · --</strong><p id="heroNpkMeta">Esperando sensores</p></div>
         </aside>
       </div>
     </section>
 
-    <section class="slider-section reveal" id="tecnologia">
-      <div class="section-kicker">Solución integral</div>
-      <h2>Una plataforma diseñada para conectar sensores reales, no datos simulados.</h2>
-      <div class="smart-slider" id="smartSlider">
-        <button class="slider-arrow" data-slider="prev" aria-label="Anterior">‹</button>
-        <div class="slider-track">
-          <article class="slide active"><span>01</span><h3>Conexión backend</h3><p>El frontend consulta endpoints reales y muestra estado de conexión.</p></article>
-          <article class="slide"><span>02</span><h3>Sensores ESP32</h3><p>Cada dispositivo se registra por ID y queda pendiente hasta recibir lectura.</p></article>
-          <article class="slide"><span>03</span><h3>Parcelas por ID</h3><p>Las lecturas se agrupan por lote o parcela definidos en el ESP32/backend.</p></article>
-          <article class="slide"><span>04</span><h3>Analítica real</h3><p>Los gráficos se generan únicamente con datos recibidos.</p></article>
-          <article class="slide"><span>05</span><h3>Clima de Chigorodó</h3><p>Consulta meteorología abierta por coordenadas reales.</p></article>
-        </div>
-        <button class="slider-arrow" data-slider="next" aria-label="Siguiente">›</button>
-      </div>
-    </section>
-
     <section class="counter-section reveal">
-      <div class="metric-card"><strong id="landingConnectedSensors" data-counter="0">0</strong><span>Sensores conectados</span></div>
-      <div class="metric-card"><strong id="landingRegisteredSensors" data-counter="0">0</strong><span>ESP32 registrados</span></div>
-      <div class="metric-card"><strong id="landingParcelCount" data-counter="0">0</strong><span>Parcelas registradas</span></div>
-      <div class="metric-card"><strong id="landingAlertCount" data-counter="0">0</strong><span>Alertas reales</span></div>
+      <div class="metric-card"><strong id="landingConnectedSensors">0</strong><span>Sensores conectados</span></div>
+      <div class="metric-card"><strong id="landingListedSensors">0</strong><span>Sensores listados</span></div>
+      <div class="metric-card"><strong id="landingDisconnectedSensors">0</strong><span>Sin lectura</span></div>
+      <div class="metric-card"><strong id="landingAlertCount">0</strong><span>Alertas reales</span></div>
     </section>
 
     <section class="benefits-section" id="beneficios">
       <div class="section-heading reveal">
-        <div class="section-kicker">Beneficios estratégicos</div>
-        <h2>De los datos reales del suelo a decisiones agronómicas accionables.</h2>
-        <p>Ideal para proyectos de investigación, fincas cacaoteras, universidades y prototipos IoT con ESP32.</p>
+        <div class="section-kicker">Beneficios</div>
+        <h2>Panel limpio para consumir datos reales del backend.</h2>
+        <p>Sin login, sin IA, sin configuración visible de API y sin información de lotes. Solo sensores ESP32, clima, mapa, analíticas, alertas e informes.</p>
       </div>
       <div class="benefit-grid">
-        <article class="benefit-card reveal"><i>📡</i><h3>Datos reales</h3><p>Sin valores falsos: los módulos se activan al recibir lecturas del backend.</p></article>
-        <article class="benefit-card reveal"><i>🌱</i><h3>NPK por sensor</h3><p>Lectura por ID de ESP32, parcela y ubicación.</p></article>
-        <article class="benefit-card reveal"><i>🛰️</i><h3>Mapa de Chigorodó</h3><p>Marcadores reales cuando el sensor entregue coordenadas.</p></article>
-        <article class="benefit-card reveal"><i>🌦️</i><h3>Meteorología real</h3><p>Temperatura, lluvia, humedad y viento desde Open-Meteo.</p></article>
-        <article class="benefit-card reveal"><i>📄</i><h3>Informes filtrados</h3><p>Reportes por sensor, parcela y periodo.</p></article>
+        <article class="benefit-card reveal"><i>📡</i><h3>Sensores ESP32</h3><p>Lecturas por ID, tolerando sensores con campos nulos.</p></article>
+        <article class="benefit-card reveal"><i>🌱</i><h3>NPK real</h3><p>Nitrógeno, fósforo, potasio, humedad y temperatura en tiempo real.</p></article>
+        <article class="benefit-card reveal"><i>🛰️</i><h3>Mapa</h3><p>Marcadores solo si llegan coordenadas reales.</p></article>
+        <article class="benefit-card reveal"><i>🌦️</i><h3>Meteorología</h3><p>Open-Meteo y radar RainViewer para Chigorodó.</p></article>
+        <article class="benefit-card reveal"><i>📄</i><h3>Informes</h3><p>PDF, CSV o HTML por sensor y rango de fechas.</p></article>
       </div>
     </section>
 
     <section class="platform-preview reveal" id="plataforma">
       <div>
-        <div class="section-kicker">Dashboard realista</div>
-        <h2>Centro de control listo para integrarse con el backend.</h2>
-        <p>Incluye sensores, parcelas, mapa, meteorología real, analíticas, alertas, reportes y configuración de API.</p>
-        <button class="btn btn-primary" data-open-app="dashboard">Abrir dashboard</button>
+        <div class="section-kicker">Dashboard</div>
+        <h2>Centro de control listo para recibir los datos del backend.</h2>
+        <p>La URL base queda fija en el código: https://npk-yvtg.onrender.com. El frontend no envía sensores por POST.</p>
+        <button class="btn btn-primary" data-open-app="dashboard">Abrir plataforma</button>
       </div>
       <div class="preview-window">
         <div class="window-bar"><span></span><span></span><span></span></div>
-        <div class="preview-dashboard">
-          <div class="preview-sidebar"></div>
-          <div class="preview-content">
-            <div class="preview-kpis"><span></span><span></span><span></span></div>
-            <div class="preview-chart empty-preview">Esperando datos reales</div>
-          </div>
-        </div>
+        <div class="preview-dashboard"><div class="preview-sidebar"></div><div class="preview-content"><div class="preview-kpis"><span></span><span></span><span></span></div><div class="preview-chart empty-preview">Esperando datos reales</div></div></div>
       </div>
     </section>
   </main>
 
-  <section class="app-shell hidden" id="appShell" aria-label="Panel de administración NPK Smart Cacao">
+  <section class="app-shell hidden" id="appShell" aria-label="Panel NPK Smart Cacao">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-head">
-        <a href="#" class="brand" data-open-app="dashboard">
-          <span class="brand-icon">◈</span>
-          <span><strong>NPK Smart</strong><small>Cacao Control</small></span>
-        </a>
+        <a href="#" class="brand" data-open-app="dashboard"><span class="brand-icon">◈</span><span><strong>NPK Smart</strong><small>Cacao Control</small></span></a>
         <button class="icon-button sidebar-toggle" id="sidebarToggle" aria-label="Contraer menú">☰</button>
       </div>
-      <nav class="side-menu" aria-label="Módulos de la plataforma">
+      <nav class="side-menu" aria-label="Módulos">
         <button class="side-item active" data-view="inicio"><span>🏠</span><b>Inicio</b></button>
         <button class="side-item" data-view="dashboard"><span>📊</span><b>Dashboard</b></button>
         <button class="side-item" data-view="sensores"><span>📡</span><b>Sensores</b></button>
-        <button class="side-item" data-view="parcelas"><span>🌿</span><b>Parcelas</b></button>
         <button class="side-item" data-view="mapa"><span>🛰️</span><b>Mapa</b></button>
         <button class="side-item" data-view="meteorologia"><span>🌦️</span><b>Meteorología</b></button>
         <button class="side-item" data-view="estadisticas"><span>📈</span><b>Analíticas</b></button>
         <button class="side-item" data-view="alertas"><span>🚨</span><b>Alertas</b></button>
         <button class="side-item" data-view="reportes"><span>📄</span><b>Informes</b></button>
-        <button class="side-item" data-view="configuracion"><span>⚙️</span><b>Backend/API</b></button>
-        <button class="side-item" data-view="ayuda"><span>❔</span><b>Ayuda</b></button>
       </nav>
     </aside>
 
@@ -184,121 +139,100 @@
         <a href="#" class="top-logo" data-open-landing><span>◈</span>NPK Smart Cacao</a>
         <div class="searchbar">
           <span>⌕</span>
-          <input type="search" id="globalSearch" placeholder="Buscar sensor ID, parcela ID o ubicación..." />
+          <input type="search" id="globalSearch" placeholder="Buscar sensor, alerta, mapa, clima, informe..." />
         </div>
         <div class="top-actions">
           <span class="connection-pill" id="connectionPill">Sensores no conectados</span>
-          <button class="icon-button" id="quickSettings" title="Configurar backend">⚙️</button>
           <button class="icon-button has-badge" id="notificationBtn" title="Notificaciones">🔔<span id="notificationCount">0</span></button>
           <button class="theme-switch" id="themeToggle" aria-label="Cambiar tema"><span>◐</span></button>
         </div>
       </nav>
-
       <div class="breadcrumb" id="breadcrumb">Inicio / Dashboard</div>
 
       <main class="view-container">
-        <section class="view active" id="view-inicio">
+        <section class="view active" id="view-inicio" data-search-keywords="inicio portada sensores dashboard mapa meteorologia alertas informes">
           <div class="welcome-card reveal-now">
             <div>
               <span class="eyebrow"><span class="pulse-dot"></span> Plataforma frontend</span>
               <h1>Centro de control NPK Smart Cacao para Chigorodó.</h1>
-              <p>Registra IDs de ESP32 y parcelas, conecta el backend y visualiza únicamente datos reales.</p>
+              <p>Este frontend consulta el backend y no escribe en MongoDB. Si un sensor llega con datos nulos, se muestra como sin lectura sin dañar la página.</p>
               <div class="hero-actions compact">
                 <button class="btn btn-primary" data-view-link="dashboard">Ver dashboard</button>
-                <button class="btn btn-outline" data-view-link="sensores">Agregar sensor</button>
-                <button class="btn btn-secondary" data-view-link="configuracion">Configurar backend</button>
+                <button class="btn btn-outline" data-view-link="sensores">Ver sensores</button>
+                <button class="btn btn-secondary" id="homeRefreshBtn">Actualizar datos</button>
               </div>
             </div>
-            <div class="status-orb">
-              <span id="healthScore">--</span>
-              <small id="healthLabel">Sensores no conectados</small>
-            </div>
+            <div class="status-orb"><span id="healthScore">--</span><small id="healthLabel">Sensores no conectados</small></div>
           </div>
           <div class="module-grid">
-            <article class="module-card" data-view-link="sensores"><span>📡</span><h3>Sensores IoT</h3><p>Alta por ID de ESP32 y estado real de conexión.</p></article>
-            <article class="module-card" data-view-link="parcelas"><span>🌿</span><h3>Parcelas</h3><p>Registro por ID de lote/parcela definido en el dispositivo.</p></article>
-            <article class="module-card" data-view-link="mapa"><span>🛰️</span><h3>Mapa satelital</h3><p>Marcadores solo cuando existan coordenadas reales.</p></article>
-            <article class="module-card" data-view-link="reportes"><span>📄</span><h3>Informes</h3><p>Generación por sensor ID y parcela ID.</p></article>
+            <article class="module-card" data-view-link="sensores"><span>📡</span><h3>Sensores IoT</h3><p>Lecturas reales por ID ESP32.</p></article>
+            <article class="module-card" data-view-link="dashboard"><span>🌱</span><h3>NPK en tiempo real</h3><p>N, P, K, humedad del suelo y temperatura del aire.</p></article>
+            <article class="module-card" data-view-link="mapa"><span>🛰️</span><h3>Mapa</h3><p>Ubicación si el backend entrega latitud y longitud.</p></article>
+            <article class="module-card" data-view-link="reportes"><span>📄</span><h3>Informes</h3><p>Generación por sensor ID.</p></article>
           </div>
         </section>
 
-        <section class="view" id="view-dashboard">
+        <section class="view" id="view-dashboard" data-search-keywords="dashboard centro control nitrogeno fosforo potasio humedad temperatura tiempo real">
           <div class="view-head">
-            <div>
-              <span class="section-kicker">Dashboard principal</span>
-              <h1>Centro de control del cultivo</h1>
-              <p class="muted">Selecciona vista general, sensor específico o parcela específica.</p>
-            </div>
+            <div><span class="section-kicker">Dashboard principal</span><h1>Centro de control de cultivo</h1><p class="muted">Muestra NPK, humedad del suelo y temperatura del aire con sensores reales.</p></div>
             <div class="view-actions dashboard-controls">
-              <select id="dashboardScope"><option value="general">General</option><option value="sensor">Sensor específico</option><option value="parcela">Parcela específica</option></select>
+              <select id="dashboardScope"><option value="general">General</option><option value="sensor">Sensor específico</option></select>
               <select id="dashboardSensorSelect"><option value="">Seleccionar sensor</option></select>
-              <select id="dashboardParcelSelect"><option value="">Seleccionar parcela</option></select>
               <button class="btn btn-outline" id="refreshDataBtn">Actualizar datos</button>
               <button class="btn btn-primary" data-view-link="reportes">Generar informe</button>
             </div>
           </div>
-          <div class="connection-banner panel" id="sensorConnectionBanner">
-            <strong>Sensores no conectados</strong>
-            <p>Cuando el backend envíe lecturas reales, este panel cambiará a tiempo real y se habilitarán gráficos, alertas y mapa.</p>
-          </div>
+          <div class="connection-banner panel" id="sensorConnectionBanner"><strong>Sensores no conectados</strong><p>Cuando el backend envíe lecturas reales, este panel cambiará a tiempo real.</p></div>
           <div class="kpi-grid" id="kpiGrid"></div>
           <div class="dashboard-grid">
             <article class="panel chart-panel"><div class="panel-head"><h3>NPK · humedad · temperatura</h3><button class="chip" id="realtimeChip">Sin conexión</button></div><canvas id="npkLineChart" height="230"></canvas></article>
             <article class="panel chart-panel"><div class="panel-head"><h3>Estado de sensores</h3><button class="chip" id="statusChip">Sin datos</button></div><canvas id="cropDonutChart" height="230"></canvas></article>
-            <article class="panel wide"><div class="panel-head"><h3>Alertas reales recientes</h3><button class="btn btn-small btn-outline" data-view-link="alertas">Ver todas</button></div><div class="alert-list compact-alerts" id="compactAlerts"></div></article>
+            <article class="panel wide"><div class="panel-head"><h3>Alertas recientes</h3><button class="btn btn-small btn-outline" data-view-link="alertas">Ver todas</button></div><div class="alert-list compact-alerts" id="compactAlerts"></div></article>
             <article class="panel weather-mini"><div class="panel-head"><h3>Meteorología ahora</h3><span class="chip">Chigorodó</span></div><div class="weather-current"><span id="miniWeatherIcon">🌤️</span><strong id="miniWeatherTemp">--°C</strong><p id="miniWeatherMeta">Cargando clima real...</p></div></article>
           </div>
         </section>
 
-        <section class="view" id="view-sensores">
+        <section class="view" id="view-sensores" data-search-keywords="sensores esp32 gestion ids conectado desconectado csv actualizar eliminar">
           <div class="view-head">
-            <div><span class="section-kicker">Panel de sensores</span><h1>Gestión de sensores ESP32</h1><p class="muted">Agrega el ID grabado en el ESP32. Hasta recibir lectura real aparecerá como no conectado.</p></div>
-            <div class="view-actions"><button class="btn btn-outline" id="exportSensorsBtn">Exportar CSV</button><button class="btn btn-primary" id="addSensorBtn">Agregar sensor por ID</button></div>
+            <div><span class="section-kicker">Panel de sensores</span><h1>Gestión de sensores ESP32</h1><p class="muted">Se muestran los sensores que entrega el backend. Los controles de eliminar/actualizar ID son visuales del frontend y no escriben en MongoDB.</p></div>
+            <div class="view-actions">
+              <button class="btn btn-outline" id="exportSensorsBtn">Exportar CSV</button>
+              <button class="btn btn-secondary" id="addSensorBtn">Agregar ID local</button>
+              <button class="btn btn-outline" id="updateSensorBtn">Actualizar ID ESP32</button>
+              <button class="btn btn-primary" id="deleteSensorBtn">Eliminar sensor</button>
+            </div>
           </div>
           <div class="connection-banner panel" id="sensorsStatusBanner"></div>
           <div class="filters-card panel sensor-filters">
-            <input type="search" id="sensorSearch" placeholder="Buscar por sensor ID, parcela ID o ubicación...">
-            <select id="statusFilter"><option value="todos">Todos los estados</option><option value="conectado">Conectados</option><option value="no_conectado">No conectados</option><option value="critico">Críticos</option><option value="mantenimiento">Mantenimiento</option></select>
-            <select id="lotFilter"><option value="todos">Todas las parcelas</option></select>
+            <input type="search" id="sensorSearch" placeholder="Buscar por sensor ID, nombre o ubicación...">
+            <select id="statusFilter"><option value="todos">Todos los estados</option><option value="conectado">Conectados</option><option value="no_conectado">Sin lectura</option><option value="critico">Críticos</option><option value="mantenimiento">Mantenimiento</option></select>
             <input type="date" id="dateFilter">
             <button class="btn btn-secondary" id="clearFilters">Limpiar filtros</button>
           </div>
           <div class="table-wrap panel">
             <table class="data-table" id="sensorsTable">
-              <thead>
-                <tr><th>ID ESP32</th><th>Nombre</th><th>Estado</th><th>Parcela ID</th><th>Ubicación</th><th>N</th><th>P</th><th>K</th><th>Humedad</th><th>Temp.</th><th>Última lectura</th><th>Acciones</th></tr>
-              </thead>
+              <thead><tr><th>ID ESP32</th><th>Nombre</th><th>Estado</th><th>Ubicación</th><th>N</th><th>P</th><th>K</th><th>Humedad suelo</th><th>Temp. aire</th><th>Última lectura</th><th>Acciones</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
         </section>
 
-        <section class="view" id="view-parcelas">
-          <div class="view-head"><div><span class="section-kicker">Parcelas</span><h1>Parcelas monitoreadas por ID</h1><p class="muted">Registra el ID del lote/parcela que también se enviará desde el ESP32 o backend.</p></div><button class="btn btn-primary" id="addParcelBtn">Agregar parcela ID</button></div>
-          <div class="parcel-grid" id="parcelGrid"></div>
-        </section>
-
-        <section class="view" id="view-mapa">
+        <section class="view" id="view-mapa" data-search-keywords="mapa satelital sensores chigorodo coordenadas georreferenciacion ubicacion">
           <div class="view-head map-header">
-            <div><span class="section-kicker">Georreferenciación</span><h1>Mapa satelital de sensores · Chigorodó</h1><p>El mapa solo ubica sensores con latitud y longitud recibidas o registradas.</p></div>
-            <div class="map-tools"><button class="btn btn-outline" data-map-filter="all">Todos</button><button class="btn btn-outline" data-map-filter="conectado">Conectados</button><button class="btn btn-outline" data-map-filter="critico">Críticos</button><button class="btn btn-outline" data-map-filter="no_conectado">No conectados</button><button class="btn btn-primary" id="mapFullscreen">Pantalla completa</button></div>
+            <div><span class="section-kicker">Georreferenciación</span><h1>Mapa satelital de sensores · Chigorodó</h1><p>El mapa solo ubica sensores con latitud y longitud recibidas desde el backend.</p></div>
+            <div class="map-tools"><button class="btn btn-outline" data-map-filter="all">Todos</button><button class="btn btn-outline" data-map-filter="conectado">Conectados</button><button class="btn btn-outline" data-map-filter="critico">Críticos</button><button class="btn btn-outline" data-map-filter="no_conectado">Sin lectura</button><button class="btn btn-primary" id="mapFullscreen">Pantalla completa</button></div>
           </div>
           <div class="map-layout leaflet-map-layout">
             <div class="map-container panel">
               <div id="sensorMap"></div>
-              <div class="map-floating-controls glass">
-                <label><input type="checkbox" checked data-heat="nitrogen" /> Nitrógeno</label>
-                <label><input type="checkbox" data-heat="phosphorus" /> Fósforo</label>
-                <label><input type="checkbox" data-heat="potassium" /> Potasio</label>
-                <label><input type="checkbox" data-heat="humidity" /> Humedad</label>
-              </div>
+              <div class="map-floating-controls glass"><label><input type="checkbox" checked data-heat="nitrogen" /> Nitrógeno</label><label><input type="checkbox" data-heat="phosphorus" /> Fósforo</label><label><input type="checkbox" data-heat="potassium" /> Potasio</label><label><input type="checkbox" data-heat="humidity" /> Humedad</label></div>
               <div class="mini-map-card glass"><strong>Chigorodó</strong><small>Centro: 7.66638, -76.68106</small><div class="mini-map-grid"><span></span><span></span><span></span><span></span><i></i></div></div>
             </div>
-            <aside class="map-info panel" id="mapInfo"><h3>Sensor seleccionado</h3><p>Sensores no conectados o sin coordenadas. Cuando exista lat/lng, aparecerá el marcador.</p><div class="legend"><span><i class="dot active-dot"></i>Conectado</span><span><i class="dot warning-dot"></i>Crítico</span><span><i class="dot off-dot"></i>No conectado</span><span><i class="dot maintenance-dot"></i>Mantenimiento</span></div></aside>
+            <aside class="map-info panel" id="mapInfo"><h3>Sensor seleccionado</h3><p>Sensores no conectados o sin coordenadas. Cuando exista lat/lng, aparecerá el marcador.</p><div class="legend"><span><i class="dot active-dot"></i>Conectado</span><span><i class="dot warning-dot"></i>Crítico</span><span><i class="dot off-dot"></i>Sin lectura</span><span><i class="dot maintenance-dot"></i>Mantenimiento</span></div></aside>
           </div>
         </section>
 
-        <section class="view" id="view-meteorologia">
+        <section class="view" id="view-meteorologia" data-search-keywords="meteorologia clima lluvia radar satelital temperatura humedad viento open meteo rainviewer chigorodo">
           <div class="view-head"><div><span class="section-kicker">Clima real</span><h1>Dashboard meteorológico · Chigorodó</h1><p>Datos abiertos por coordenadas. No dependen de sensores simulados.</p></div><button class="btn btn-outline" id="refreshWeatherBtn">Actualizar clima</button></div>
           <div class="weather-grid" id="weatherGrid">
             <article class="weather-widget"><span>🌡️</span><strong id="weatherTemp">--°C</strong><small>Temperatura actual</small></article>
@@ -307,75 +241,45 @@
             <article class="weather-widget"><span>💨</span><strong id="weatherWind">-- km/h</strong><small>Viento 10 m</small></article>
             <article class="weather-widget"><span>🛰️</span><strong id="weatherSource">Open-Meteo + radar</strong><small id="weatherUpdated">Cargando...</small></article>
           </div>
-          <div class="weather-map-layout">
-            <article class="panel weather-radar-panel">
-              <div class="panel-head"><h3>Mapa meteorológico satelital/radar · Chigorodó</h3><span class="chip" id="radarStatusChip">Cargando radar</span></div>
-              <div id="weatherMap"></div>
-              <p class="muted weather-map-note">Base satelital + capa de radar de lluvia cuando el servicio abierto esté disponible.</p>
-            </article>
-          </div>
+          <div class="weather-map-layout"><article class="panel weather-radar-panel"><div class="panel-head"><h3>Mapa meteorológico satelital/radar · Chigorodó</h3><span class="chip" id="radarStatusChip">Cargando radar</span></div><div id="weatherMap"></div><p class="muted weather-map-note">Base satelital + capa de radar de lluvia cuando el servicio abierto esté disponible.</p></article></div>
           <div class="dashboard-grid"><article class="panel wide"><div class="panel-head"><h3>Pronóstico 7 días</h3><span class="chip">Chigorodó · Antioquia</span></div><canvas id="weatherChart" height="180"></canvas></article><article class="panel"><h3>Próximos días</h3><div class="forecast-list" id="forecastContent"></div></article></div>
         </section>
 
-        <section class="view" id="view-estadisticas">
+        <section class="view" id="view-estadisticas" data-search-keywords="analiticas graficas estadisticas npk humedad sensores datos reales">
           <div class="view-head"><div><span class="section-kicker">Analíticas</span><h1>Analíticas interactivas reales</h1><p>Los gráficos aparecen solo si existen lecturas reales de sensores.</p></div><button class="btn btn-outline" id="refreshAnalyticsBtn">Actualizar analíticas</button></div>
           <div class="dashboard-grid analytics-grid">
-            <article class="panel chart-panel"><h3>NPK por parcela</h3><canvas id="barChart" height="180"></canvas></article>
+            <article class="panel chart-panel"><h3>NPK por sensor</h3><canvas id="barChart" height="180"></canvas></article>
             <article class="panel chart-panel"><h3>Humedad por sensor</h3><canvas id="areaChart" height="180"></canvas></article>
             <article class="panel chart-panel"><h3>Alertas por tipo</h3><canvas id="alertDonutChart" height="180"></canvas></article>
             <article class="panel"><h3>Matriz nutricional</h3><div class="heatmap-grid" id="heatmapGrid"></div></article>
           </div>
         </section>
 
-        <section class="view" id="view-alertas">
+        <section class="view" id="view-alertas" data-search-keywords="alertas notificaciones reglas criticas advertencias informativas npk humedad temperatura conectividad">
           <div class="view-head"><div><span class="section-kicker">Centro de alertas</span><h1>Alertas y notificaciones reales</h1><p class="muted">Se generan con umbrales aplicados a datos reales recibidos del backend.</p></div><button class="btn btn-primary" id="configureAlertsBtn">Ver reglas</button></div>
           <div class="alert-summary-grid" id="alertSummaryGrid"></div>
           <div class="panel"><div class="panel-head"><h3>Alertas detectadas</h3><span class="muted">NPK · Humedad · Temperatura · Conectividad</span></div><div class="alert-list" id="alertList"></div></div>
         </section>
 
-        <section class="view" id="view-reportes">
-          <div class="view-head"><div><span class="section-kicker">Informes</span><h1>Generador de informes</h1><p class="muted">Filtra por ID de sensor y por ID de parcela/lote.</p></div><div class="view-actions"><button class="btn btn-outline" id="previewReportBtn">Vista previa</button><button class="btn btn-primary" id="generateReportBtn">Generar informe</button></div></div>
+        <section class="view" id="view-reportes" data-search-keywords="reportes informes pdf csv html generar sensor rango fechas descargar">
+          <div class="view-head"><div><span class="section-kicker">Informes</span><h1>Generador de informes</h1><p class="muted">Filtra por ID de sensor y rango de fechas. No usa campos de lote.</p></div><div class="view-actions"><button class="btn btn-outline" id="previewReportBtn">Vista previa</button><button class="btn btn-primary" id="generateReportBtn">Generar informe</button></div></div>
           <div class="reports-grid">
             <article class="panel report-builder">
               <h3>Crear informe técnico</h3>
               <div class="form-grid">
                 <label>Tipo de informe<select id="reportType"><option value="general">General</option><option value="npk">NPK</option><option value="humedad">Humedad</option><option value="meteorologia">Meteorología</option><option value="alertas">Alertas</option></select></label>
                 <label>ID sensor ESP32<select id="reportSensorId"><option value="todos">Todos</option></select></label>
-                <label>ID parcela / lote<select id="reportParcelId"><option value="todos">Todas</option></select></label>
-                <label>Subcelda / sector de parcela<input id="reportSubcellId" placeholder="Opcional: sector, subcelda o bloque"></label>
                 <label>Fecha inicial<input type="date" id="reportStartDate"></label>
                 <label>Fecha final<input type="date" id="reportEndDate"></label>
                 <label>Formato de salida<select id="reportFormat"><option value="pdf">PDF</option><option value="csv">CSV</option><option value="html">HTML</option></select></label>
               </div>
               <div class="export-buttons"><button class="btn btn-secondary" id="printReportBtn">PDF</button><button class="btn btn-secondary" id="csvReportBtn">CSV</button><button class="btn btn-secondary" id="htmlReportBtn">HTML</button></div>
             </article>
-            <article class="panel report-list"><h3>Informes generados</h3><div id="reportList"></div></article>
-          </div>
-        </section>
-
-        <section class="view" id="view-configuracion">
-          <div class="view-head"><div><span class="section-kicker">Backend/API</span><h1>Conexión del frontend con backend</h1><p class="muted">Backend principal configurado en Render. Puedes cambiar la URL si tu compañero publica otro servicio.</p></div><button class="btn btn-primary" id="saveApiConfigBtn">Guardar configuración</button></div>
-          <div class="settings-grid">
-            <article class="panel api-panel">
-              <h3>URL del backend</h3>
-              <div class="form-grid">
-                <label>Base URL<input id="backendUrlInput" value="https://npk-yvtg.onrender.com" placeholder="https://npk-yvtg.onrender.com"></label>
-                <label>Endpoint sensores<input id="sensorsEndpointInput" value="/sensor/latest"></label>
-                <label>Endpoint streaming SSE<input id="streamEndpointInput" value="/api/sensores/stream"></label>
-                <label>Intervalo de actualización<select id="pollIntervalInput"><option value="5000">5 segundos</option><option value="10000">10 segundos</option><option value="30000">30 segundos</option></select></label>
-              </div>
-              <div class="export-buttons"><button class="btn btn-outline" id="testBackendBtn">Probar conexión</button><button class="btn btn-secondary" id="clearApiConfigBtn">Restablecer URL Render</button></div>
+            <article class="panel report-list">
+              <div class="panel-head report-list-head"><h3>Informes generados</h3><span class="chip">Historial local</span></div>
+              <input type="search" id="reportSearch" class="report-search" placeholder="Buscar informe por nombre, formato, fecha o lecturas...">
+              <div id="reportList"></div>
             </article>
-            <article class="panel"><h3>Contrato esperado</h3><p class="muted">GET /api/sensor/latest debe devolver la última lectura real. El frontend acepta sensor_id, nitrogeno, fosforo, potasio, humedad_suelo y temperatura_ambiente, además de otros alias compatibles.</p><button class="btn btn-secondary" id="showContractBtn">Ver ejemplo JSON</button></article>
-            <article class="panel"><h3>Tema visual</h3><p>Activa modo oscuro o claro según el dispositivo.</p><button class="btn btn-secondary" id="settingsThemeToggle">Cambiar tema</button></article>
-          </div>
-        </section>
-
-        <section class="view" id="view-ayuda">
-          <div class="view-head"><div><span class="section-kicker">Ayuda</span><h1>Centro de soporte</h1></div><button class="btn btn-primary" id="copyContractBtn">Copiar contrato backend</button></div>
-          <div class="help-grid">
-            <article class="panel accordion-panel"><h3>Preguntas frecuentes</h3><div class="accordion" id="accordion"><button>¿Cómo conectar un sensor NPK?<span>＋</span></button><div>Graba un ID único en el ESP32, regístralo en la vista Sensores y haz que el backend entregue lecturas para ese sensorId.</div><button>¿Por qué aparecen sensores no conectados?<span>＋</span></button><div>Porque el ID está registrado en frontend, pero todavía no llegó una lectura real desde el backend.</div><button>¿Cómo generar informes?<span>＋</span></button><div>En Informes selecciona ID de sensor, ID de parcela, subcelda opcional y periodo. Luego genera HTML, CSV o vista imprimible PDF.</div></div></article>
-            <article class="panel"><h3>Guía rápida</h3><p>Primero configura backend, luego agrega IDs de sensores y parcelas, después actualiza datos para visualizar todo en tiempo real.</p><button class="btn btn-secondary" data-view-link="configuracion">Configurar backend</button></article>
           </div>
         </section>
       </main>

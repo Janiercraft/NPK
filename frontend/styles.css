@@ -759,3 +759,116 @@ input:focus, select:focus { border-color: rgba(31,209,154,.45); box-shadow: 0 0 
 @media (min-width: 1400px) { #weatherMap { height: 520px; } }
 @media (max-width: 900px) { #weatherMap { height: 360px; } }
 @media (max-width: 620px) { #weatherMap { height: 320px; border-radius: 18px; } }
+
+/* Ajustes versión frontend solo lectura */
+.action-stack { display:flex; flex-wrap:wrap; gap:6px; align-items:center; min-width:250px; }
+.search-hit { outline: 3px solid rgba(31,209,154,.75) !important; outline-offset: 3px; border-radius: 14px; animation: searchPulse 1.2s ease 2; }
+@keyframes searchPulse { 0%,100% { box-shadow: 0 0 0 rgba(31,209,154,0); } 50% { box-shadow: 0 0 0 10px rgba(31,209,154,.16); } }
+.data-table td small { color: var(--muted); display:block; margin-top:4px; }
+@media (max-width: 720px) {
+  .action-stack { min-width: 220px; }
+  .view-actions { align-items: stretch; }
+  .view-actions .btn { width: 100%; }
+  .dashboard-controls select, .dashboard-controls button { width: 100%; }
+}
+
+/* === Ajustes solicitados: notificaciones, informes y responsive reforzado === */
+.alert-item.resolved {
+  border-color: rgba(68,214,124,.34);
+  background: rgba(68,214,124,.10);
+}
+.alert-item.resolved .alert-icon {
+  background: rgba(68,214,124,.14);
+}
+.metric-card.resolved {
+  border-color: rgba(68,214,124,.30);
+  background: rgba(68,214,124,.08);
+}
+.alert-delete { justify-self: end; align-self: center; white-space: nowrap; }
+.modal-alert-list { display: grid; gap: .7rem; margin-top: 1rem; }
+.report-list-head { margin-bottom: .75rem; }
+.report-search {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 10px 12px;
+  outline: none;
+  margin-bottom: .85rem;
+}
+.report-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  word-break: break-word;
+}
+.report-row strong { display:block; overflow-wrap:anywhere; }
+
+/* El menú hamburguesa mantiene tamaño de texto propio y no hereda estilos de títulos. */
+.sidebar .brand strong { font-size: 1rem !important; line-height: 1.15; }
+.sidebar .brand small { font-size: .72rem !important; line-height: 1.1; }
+.side-item b { font-size: .95rem !important; line-height: 1.18 !important; font-weight: 850; }
+.side-item span { flex: 0 0 26px; font-size: 1.08rem !important; line-height: 1; }
+.side-item { min-height: 48px; }
+
+@media (min-width: 1800px) {
+  .view-container { max-width: 1680px; }
+  .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 960px) {
+  .app-shell { display: block; }
+  .sidebar {
+    width: min(300px, 86vw) !important;
+    max-width: 86vw;
+  }
+  .sidebar.open .side-item b,
+  .sidebar .side-item b { display: inline !important; }
+  .sidebar.collapsed .side-item b { display: inline !important; }
+  .app-shell:has(.sidebar.collapsed) { grid-template-columns: 1fr; }
+  .topbar {
+    height: auto;
+    min-height: var(--topbar-height);
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .searchbar {
+    order: 3;
+    flex: 1 0 100%;
+    max-width: none;
+  }
+  .top-actions { margin-left: 0; flex: 1 1 auto; justify-content: flex-end; }
+  .view-head { flex-direction: column; align-items: stretch; }
+  .view h1 { font-size: clamp(1.75rem, 6vw, 2.65rem); line-height: 1.05; }
+  .breadcrumb { padding-left: 16px; padding-right: 16px; }
+  .view-container { padding: 16px 16px 34px; }
+}
+
+@media (max-width: 760px) {
+  .top-logo { max-width: calc(100vw - 88px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top-actions { width: 100%; }
+  .connection-pill { order: 1; flex-basis: 100%; min-width: 0; }
+  .has-badge, .theme-switch { flex: 0 0 auto; }
+  .view h1 { font-size: clamp(1.45rem, 8.8vw, 2.25rem); letter-spacing: -0.04em; }
+  .view-head p, .muted { line-height: 1.5; }
+  .panel, .welcome-card { border-radius: 20px; padding: 16px; }
+  .btn { width: 100%; min-height: 46px; padding: 11px 14px; }
+  .topbar .icon-button, .topbar .theme-switch, .topbar .has-badge { width: 44px; min-width: 44px; }
+  .topbar .btn, .alert-delete, .report-row .btn { width: auto; }
+  .alert-item { grid-template-columns: auto 1fr; align-items: start; }
+  .alert-delete { grid-column: 1 / -1; width: 100%; justify-content: center; }
+  .report-row { grid-template-columns: 1fr; }
+  .report-row .btn { width: 100%; }
+  .module-grid, .dashboard-grid, .reports-grid { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 390px) {
+  .sidebar { width: 88vw !important; }
+  .side-item { padding: 11px 10px; gap: 9px; }
+  .side-item b { font-size: .88rem !important; }
+  .view-container { padding-left: 10px; padding-right: 10px; }
+  .breadcrumb { padding-left: 10px; padding-right: 10px; }
+  .searchbar { height: 44px; padding: 0 10px; }
+  .kpi-card strong { font-size: 1.45rem; }
+}
