@@ -10,9 +10,34 @@ const CHIGORODO = {
 
 const API_CONFIG = {
   baseUrl: 'https://npk-yvtg.onrender.com',
-  endpoints: ['/api/sensores', '/api/sensors', '/sensores', '/sensors', '/api/lecturas', '/lecturas', '/data'],
-  reportEndpoints: ['/api/lecturas', '/lecturas', '/api/sensores', '/api/sensors'],
-  streamEndpoint: '/api/sensores/stream',
+
+  // Primero se consultan las rutas reales del backend actual.
+  // /api/sensor/all debe devolver todos los sensores de MongoDB.
+  // /api/sensor/latest sirve como respaldo y solo devuelve el último dato global.
+  endpoints: [
+    '/api/sensor/all',
+    '/api/sensor',
+    '/api/sensor/latest',
+    '/api/sensores',
+    '/api/sensors',
+    '/sensores',
+    '/sensors',
+    '/api/lecturas',
+    '/lecturas',
+    '/data'
+  ],
+
+  reportEndpoints: [
+    '/api/sensor/all',
+    '/api/sensor',
+    '/api/sensor/latest',
+    '/api/lecturas',
+    '/lecturas',
+    '/api/sensores',
+    '/api/sensors'
+  ],
+
+  streamEndpoint: '/api/sensor/stream',
   pollIntervalMs: 10000,
   timeoutMs: 7000
 };
@@ -306,9 +331,38 @@ function sensorIdFromTopic(topic) {
   return parts.length >= 2 ? parts[1] : '';
 }
 
+function rawSensorId(raw) {
+  if (!raw || typeof raw !== 'object') return '';
+  return String(raw.sensorId ?? raw.sensor_id ?? raw.id ?? raw.codigo ?? raw.esp32Id ?? raw.deviceId ?? raw.device_id ?? raw?.device?.id ?? sensorIdFromTopic(raw.topic ?? raw.mqttTopic) ?? '').trim();
+}
+
+function latestRawRowsPerSensor(rows = []) {
+  const map = new Map();
+
+  rows.filter(item => item && typeof item === 'object').forEach(raw => {
+    const normalized = normalizeSensorReading(raw);
+    if (!normalized) return;
+
+    const key = normalized.originalId || normalized.id;
+    const current = map.get(key);
+
+    if (!current) {
+      map.set(key, raw);
+      return;
+    }
+
+    const currentTime = new Date(normalizeSensorReading(current)?.timestamp || 0).getTime() || 0;
+    const nextTime = new Date(normalized.timestamp || 0).getTime() || 0;
+
+    if (nextTime >= currentTime) map.set(key, raw);
+  });
+
+  return [...map.values()];
+}
+
 function normalizeSensorReading(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  const originalId = String(raw.sensorId ?? raw.sensor_id ?? raw.id ?? raw.codigo ?? raw.esp32Id ?? raw.deviceId ?? raw.device_id ?? raw?.device?.id ?? sensorIdFromTopic(raw.topic ?? raw.mqttTopic) ?? '').trim();
+  const originalId = rawSensorId(raw);
   if (!originalId) return null;
   const id = String(sensorAliases[originalId] || originalId).trim();
   if (!id || hiddenSensorIds.includes(id) || hiddenSensorIds.includes(originalId)) return null;
@@ -325,8 +379,8 @@ function normalizeSensorReading(raw) {
     k: toNumberOrNull(raw.k ?? raw.K ?? raw.potasio ?? raw.potassium ?? raw.potassium_ppm ?? raw.k_ppm),
     soilHumidity: toNumberOrNull(raw.soilHumidity ?? raw.humedadSuelo ?? raw.humedad_suelo ?? raw.humiditySoil ?? raw.humedad ?? raw.humidity),
     humidity: toNumberOrNull(raw.soilHumidity ?? raw.humedadSuelo ?? raw.humedad_suelo ?? raw.humiditySoil ?? raw.humedad ?? raw.humidity),
-    airTemp: toNumberOrNull(raw.airTemp ?? raw.temperaturaAire ?? raw.temperatura_aire ?? raw.air_temperature ?? raw.temperatureAir ?? raw.tempAire ?? raw.temperatura ?? raw.temp ?? raw.temperature),
-    temp: toNumberOrNull(raw.airTemp ?? raw.temperaturaAire ?? raw.temperatura_aire ?? raw.air_temperature ?? raw.temperatureAir ?? raw.tempAire ?? raw.temperatura ?? raw.temp ?? raw.temperature),
+    airTemp: toNumberOrNull(raw.airTemp ?? raw.temperaturaAmbiente ?? raw.temperatura_ambiente ?? raw.temperaturaAire ?? raw.temperatura_aire ?? raw.air_temperature ?? raw.temperatureAir ?? raw.tempAire ?? raw.temperatura ?? raw.temp ?? raw.temperature),
+    temp: toNumberOrNull(raw.airTemp ?? raw.temperaturaAmbiente ?? raw.temperatura_ambiente ?? raw.temperaturaAire ?? raw.temperatura_aire ?? raw.air_temperature ?? raw.temperatureAir ?? raw.tempAire ?? raw.temperatura ?? raw.temp ?? raw.temperature),
     timestamp,
     raw,
     fromBackend: true
@@ -441,30 +495,107 @@ function hasCriticalValues(sensor) {
     || classifyRange(sensor.airTemp ?? sensor.temp, alertRules.airTemp) === 'critical';
 }
 
-async function loadSensorsFromBackend({ silent = false } = {}) {
-  const attempts = [];
-  for (const endpointPath of API_CONFIG.endpoints) {
-    const endpoint = buildUrl(endpointPath);
-    try {
-      const response = await fetchWithTimeout(endpoint, { headers: { Accept: 'application/json' } });
-      attempts.push(`${endpoint} → HTTP ${response.status}`);
-      if (!response.ok) continue;
-      const payload = await response.json();
-      const rows = extractSensorRows(payload);
-      sensorReadings = rows.filter(item => item && typeof item === 'object');
+function sensorIdEndpointCandidates(sensorId) {
+  const encoded = encodeURIComponent(sensorId);
+  return [
+    `/api/sensor/${encoded}/latest`,
+    `/api/sensor/latest/${encoded}`,
+    `/api/sensor/by-id/${encoded}`,
+    `/api/sensor?sensor_id=${encoded}`,
+    `/api/sensor/latest?sensor_id=${encoded}`,
+    `/api/sensor/all?sensor_id=${encoded}`,
+    `/api/sensores/${encoded}`,
+    `/api/sensores?sensor_id=${encoded}`
+  ];
+}
+
+async function fetchBackendSensorById(sensorId) {
+  const candidates = sensorIdEndpointCandidates(sensorId);
+  const result = await fetchJsonCandidate(candidates, { timeoutMs: 5000 });
+
+  if (!result.ok) return null;
+
+  const rows = latestRawRowsPerSensor(extractSensorRows(result.data));
+  const normalized = rows.map(normalizeSensorReading).filter(Boolean);
+  return normalized.find(sensor => sensor.id === sensorId || sensor.originalId === sensorId) || null;
+}
+
+async function syncLocalSensorById(sensorId, { silent = false } = {}) {
+  await loadSensorsFromBackend({ silent: true });
+
+  let sensor = getAllSensors().find(item => item.id === sensorId || item.originalId === sensorId);
+
+  if (!sensor?.realData) {
+    sensor = await fetchBackendSensorById(sensorId);
+    if (sensor?.raw) {
+      sensorReadings = mergeRawReadings(sensorReadings, [sensor.raw]);
       state.backendOnline = true;
       state.lastSync = new Date().toISOString();
       renderAll();
-      if (!silent) toast('Backend conectado', `${getAllSensors().length} sensor(es) listados desde ${endpointPath}.`);
+    }
+  }
+
+  if (!silent) {
+    if (sensor?.realData) {
+      toast('Sensor sincronizado', `El ID ${sensorId} coincide con datos reales del backend.`);
+    } else {
+      toast('ID agregado como pendiente', `El ID ${sensorId} quedó visible. Cuando el backend entregue ese sensor_id, se relacionará automáticamente.`);
+    }
+  }
+
+  return sensor;
+}
+
+async function loadSensorsFromBackend({ silent = false } = {}) {
+  const attempts = [];
+
+  for (const endpointPath of API_CONFIG.endpoints) {
+    const endpoint = buildUrl(endpointPath);
+
+    try {
+      const response = await fetchWithTimeout(endpoint, { headers: { Accept: 'application/json' } });
+      attempts.push(`${endpoint} → HTTP ${response.status}`);
+
+      if (!response.ok) continue;
+
+      const payload = await response.json();
+      const rows = extractSensorRows(payload);
+
+      if (!rows.length) {
+        attempts.push(`${endpoint} → sin filas de sensores`);
+        continue;
+      }
+
+      const latestRows = latestRawRowsPerSensor(rows);
+
+      if (endpointPath.includes('/latest') && latestRows.length === 1) {
+        sensorReadings = mergeRawReadings(sensorReadings, latestRows);
+      } else {
+        sensorReadings = latestRows;
+      }
+
+      state.backendOnline = true;
+      state.lastSync = new Date().toISOString();
+      renderAll();
+
+      if (!silent) {
+        toast('Backend conectado', `${getAllSensors().length} sensor(es) listados desde ${endpointPath}.`);
+      }
+
       return;
     } catch (error) {
       attempts.push(`${endpoint} → ${error.message}`);
     }
   }
+
   state.backendOnline = false;
   sensorReadings = [];
   renderAll();
-  if (!silent) toast('Backend no disponible', 'No se recibieron sensores reales. La página no se bloquea y mostrará IDs locales si existen.');
+
+  if (!silent) {
+    toast('Backend sin listado de sensores', 'No encontré una ruta que devuelva sensores. Agrega GET /api/sensor/all en el backend o usa Agregar ID para dejarlo pendiente.');
+  }
+
   console.info('Intentos de lectura del backend:', attempts);
 }
 
@@ -641,7 +772,7 @@ function renderSensorsTable() {
       <td>${dash(sensor.soilHumidity ?? sensor.humidity)}${(sensor.soilHumidity ?? sensor.humidity) != null ? '%' : ''}</td>
       <td>${dash(sensor.airTemp ?? sensor.temp)}${(sensor.airTemp ?? sensor.temp) != null ? '°C' : ''}</td>
       <td>${sensor.timestamp ? formatDateTime(sensor.timestamp) : 'Sin lectura'}</td>
-      <td class="action-stack"><button class="btn btn-small btn-outline" onclick="window.openSensorHistory('${escapeAttr(sensor.id)}')">Ver</button><button class="btn btn-small btn-secondary" onclick="window.exportOneSensor('${escapeAttr(sensor.id)}')">CSV</button><button class="btn btn-small btn-outline" onclick="window.openUpdateSensorModal('${escapeAttr(sensor.id)}')">Actualizar ID</button><button class="btn btn-small btn-primary" onclick="window.confirmHideSensor('${escapeAttr(sensor.id)}')">Eliminar</button></td>
+      <td class="action-stack"><button class="btn btn-small btn-outline" onclick="window.openSensorHistory('${escapeAttr(sensor.id)}')">Ver</button><button class="btn btn-small btn-secondary" onclick="window.syncSensorById('${escapeAttr(sensor.id)}')">Sincronizar</button><button class="btn btn-small btn-outline" onclick="window.exportOneSensor('${escapeAttr(sensor.id)}')">CSV</button><button class="btn btn-small btn-outline" onclick="window.openUpdateSensorModal('${escapeAttr(sensor.id)}')">Actualizar ID</button><button class="btn btn-small btn-primary" onclick="window.confirmHideSensor('${escapeAttr(sensor.id)}')">Eliminar</button></td>
     </tr>
   `).join('');
 }
@@ -1078,21 +1209,32 @@ async function loadRainViewerRadar() {
 }
 
 function openAddSensorModal() {
-  showModal(`<h2>Agregar ID local de sensor</h2><p class="muted">Esto no envía datos al backend ni a MongoDB. Solo permite dejar un ID visible como “sin lectura” mientras el backend empieza a enviarlo.</p><div class="form-grid" style="margin-top:16px;"><label>ID del ESP32<input id="newSensorId" placeholder="Ej: 002"></label><label>Nombre opcional<input id="newSensorName" placeholder="Ej: Sensor cacao 002"></label><label>Ubicación opcional<input id="newSensorLocation" placeholder="Ej: Chigorodó"></label><label>Latitud opcional<input id="newSensorLat" placeholder="7.66638"></label><label>Longitud opcional<input id="newSensorLng" placeholder="-76.68106"></label></div><button class="btn btn-primary full" style="margin-top:14px" onclick="window.saveLocalSensor()">Guardar en esta página</button>`);
+  showModal(`<h2>Agregar o sincronizar sensor por ID</h2><p class="muted">Pega aquí el <strong>sensor_id</strong> que ya existe en MongoDB. El frontend no crea documentos: solo busca ese ID en el backend y lo relaciona con sus lecturas. Si todavía no aparece, queda como pendiente y se sincroniza cuando el backend lo entregue.</p><div class="form-grid" style="margin-top:16px;"><label>sensor_id de MongoDB / ESP32<input id="newSensorId" placeholder="Ej: 001"></label><label>Nombre opcional<input id="newSensorName" placeholder="Ej: Sensor cacao 001"></label><label>Ubicación opcional<input id="newSensorLocation" placeholder="Ej: Chigorodó"></label><label>Latitud opcional<input id="newSensorLat" placeholder="7.66638"></label><label>Longitud opcional<input id="newSensorLng" placeholder="-76.68106"></label></div><button class="btn btn-primary full" style="margin-top:14px" onclick="window.saveLocalSensor()">Guardar y sincronizar</button>`);
 }
 
-window.saveLocalSensor = function() {
+window.saveLocalSensor = async function() {
   const id = $('#newSensorId')?.value.trim();
-  if (!id) return toast('Falta ID', 'Escribe el ID único del ESP32.');
-  const sensor = { id, name: $('#newSensorName')?.value.trim() || `ESP32 ${id}`, location: $('#newSensorLocation')?.value.trim() || 'ID local pendiente de lectura', lat: toNumberOrNull($('#newSensorLat')?.value), lng: toNumberOrNull($('#newSensorLng')?.value) };
+  if (!id) return toast('Falta ID', 'Escribe el sensor_id exacto que aparece en MongoDB.');
+
+  const sensor = {
+    id,
+    name: $('#newSensorName')?.value.trim() || `ESP32 ${id}`,
+    location: $('#newSensorLocation')?.value.trim() || 'ID local pendiente de lectura',
+    lat: toNumberOrNull($('#newSensorLat')?.value),
+    lng: toNumberOrNull($('#newSensorLng')?.value)
+  };
+
   const exists = localSensors.some(s => s.id === id);
-  localSensors = exists ? localSensors.map(s => s.id === id ? sensor : s) : [...localSensors, sensor];
+  localSensors = exists ? localSensors.map(s => s.id === id ? { ...s, ...sensor } : s) : [...localSensors, sensor];
   hiddenSensorIds = hiddenSensorIds.filter(hiddenId => hiddenId !== id);
+
   saveJSON('npk-local-sensor-placeholders', localSensors);
   saveJSON('npk-hidden-sensors', hiddenSensorIds);
+
   closeModal();
   renderAll();
-  toast('ID local agregado', `${id} quedó visible sin enviar nada al backend.`);
+
+  await syncLocalSensorById(id);
 };
 
 function openUpdateSensorModal(id = '') {
@@ -1434,6 +1576,11 @@ function escapeAttr(value) {
 function safeFileName(value) {
   return String(value || 'sensor').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'sensor';
 }
+
+
+window.syncSensorById = function(id) {
+  return syncLocalSensorById(id);
+};
 
 window.addEventListener('resize', () => setTimeout(() => { drawAllCharts(); sensorMap?.invalidateSize?.(); weatherMap?.invalidateSize?.(); }, 150));
 document.addEventListener('DOMContentLoaded', init);

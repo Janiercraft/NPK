@@ -194,10 +194,10 @@
 
         <section class="view" id="view-sensores" data-search-keywords="sensores esp32 gestion ids conectado desconectado csv actualizar eliminar">
           <div class="view-head">
-            <div><span class="section-kicker">Panel de sensores</span><h1>Gestión de sensores ESP32</h1><p class="muted">Se muestran los sensores que entrega el backend. Los controles de eliminar/actualizar ID son visuales del frontend y no escriben en MongoDB.</p></div>
+            <div><span class="section-kicker">Panel de sensores</span><h1>Gestión de sensores ESP32</h1><p class="muted">Se muestran los sensores que entrega el backend. Si un sensor no aparece, usa “Agregar / sincronizar ID” y pega el sensor_id exacto de MongoDB para relacionarlo con sus lecturas.</p></div>
             <div class="view-actions">
               <button class="btn btn-outline" id="exportSensorsBtn">Exportar CSV</button>
-              <button class="btn btn-secondary" id="addSensorBtn">Agregar ID local</button>
+              <button class="btn btn-secondary" id="addSensorBtn">Agregar / sincronizar ID</button>
               <button class="btn btn-outline" id="updateSensorBtn">Actualizar ID ESP32</button>
               <button class="btn btn-primary" id="deleteSensorBtn">Eliminar sensor</button>
             </div>
