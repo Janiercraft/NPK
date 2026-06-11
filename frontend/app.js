@@ -9,7 +9,7 @@ const CHIGORODO = {
 };
 
 const API_CONFIG = {
-  baseUrl: 'https://npk-yvtg.onrender.com/api',
+  baseUrl: 'https://npk-yvtg.onrender.com',
   endpoints: ['/api/sensores', '/api/sensors', '/sensores', '/sensors', '/api/lecturas', '/lecturas', '/data'],
   reportEndpoints: ['/api/lecturas', '/lecturas', '/api/sensores', '/api/sensors'],
   streamEndpoint: '/api/sensores/stream',
