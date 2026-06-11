@@ -1372,12 +1372,275 @@ function filterRowsLocally(rows) {
   });
 }
 
+function getReportFilters() {
+  return {
+    type: $('#reportType')?.value || 'general',
+    sensorId: $('#reportSensorId')?.value || 'todos',
+    start: $('#reportStartDate')?.value || '',
+    end: $('#reportEndDate')?.value || ''
+  };
+}
+
+function getReportDefinition(type = 'general') {
+  const definitions = {
+    general: {
+      label: 'General',
+      includeRows: true,
+      includeWeather: true,
+      includeAlerts: true,
+      columns: [
+        { key: 'id', label: 'ID sensor' },
+        { key: 'status', label: 'Estado' },
+        { key: 'n', label: 'N' },
+        { key: 'p', label: 'P' },
+        { key: 'k', label: 'K' },
+        { key: 'soilHumidity', label: 'Humedad suelo' },
+        { key: 'airTemp', label: 'Temperatura aire' },
+        { key: 'location', label: 'Ubicación' },
+        { key: 'timestamp', label: 'Última lectura' }
+      ]
+    },
+
+    npk: {
+      label: 'NPK',
+      includeRows: true,
+      includeWeather: false,
+      includeAlerts: false,
+      columns: [
+        { key: 'id', label: 'ID sensor' },
+        { key: 'n', label: 'Nitrógeno' },
+        { key: 'p', label: 'Fósforo' },
+        { key: 'k', label: 'Potasio' },
+        { key: 'timestamp', label: 'Fecha lectura' }
+      ]
+    },
+
+    humedad: {
+      label: 'Humedad',
+      includeRows: true,
+      includeWeather: false,
+      includeAlerts: false,
+      columns: [
+        { key: 'id', label: 'ID sensor' },
+        { key: 'soilHumidity', label: 'Humedad del suelo' },
+        { key: 'timestamp', label: 'Fecha lectura' }
+      ]
+    },
+
+    meteorologia: {
+      label: 'Meteorología',
+      includeRows: false,
+      includeWeather: true,
+      includeAlerts: false,
+      columns: []
+    },
+
+    alertas: {
+      label: 'Alertas',
+      includeRows: false,
+      includeWeather: false,
+      includeAlerts: true,
+      columns: []
+    }
+  };
+
+  return definitions[type] || definitions.general;
+}
+
+function getReportFileSuffix() {
+  const filters = getReportFilters();
+  const definition = getReportDefinition(filters.type);
+  const sensorPart = filters.sensorId && filters.sensorId !== 'todos'
+    ? `-${filters.sensorId}`
+    : '-todos';
+
+  return `${definition.label.toLowerCase()}${sensorPart}`.replace(/\s+/g, '-');
+}
+
+function formatReportValue(sensor, key) {
+  if (!sensor) return '--';
+
+  if (key === 'id') return sensor.id || '--';
+
+  if (key === 'status') {
+    return statusLabels[normalizeUiStatus(sensor.status)] || sensor.status || '--';
+  }
+
+  if (key === 'n') return sensor.n != null ? `${dash(sensor.n)} ppm` : '--';
+
+  if (key === 'p') return sensor.p != null ? `${dash(sensor.p)} ppm` : '--';
+
+  if (key === 'k') return sensor.k != null ? `${dash(sensor.k)} ppm` : '--';
+
+  if (key === 'soilHumidity') {
+    const value = sensor.soilHumidity ?? sensor.humidity;
+    return value != null ? `${dash(value)}%` : '--';
+  }
+
+  if (key === 'airTemp') {
+    const value = sensor.airTemp ?? sensor.temp;
+    return value != null ? `${dash(value)}°C` : '--';
+  }
+
+  if (key === 'location') return sensor.location || '--';
+
+  if (key === 'timestamp') {
+    return sensor.timestamp ? formatDateTime(sensor.timestamp) : 'Sin lectura';
+  }
+
+  return sensor[key] ?? '--';
+}
+
+function getWeatherReportHTML() {
+  const current = state.weather?.current || {};
+  const temp = current.temperature_2m ?? current.temperature ?? current.temp;
+  const humidity = current.relative_humidity_2m ?? current.humidity;
+  const rain = current.rain ?? current.precipitation ?? current.precipitation_probability;
+  const wind = current.wind_speed_10m ?? current.windspeed;
+
+  return `
+    <h2>Meteorología</h2>
+    <div class="box">
+      <strong>Ubicación:</strong> Chigorodó, Antioquia<br>
+      <strong>Temperatura externa:</strong> ${dash(temp)}°C<br>
+      <strong>Humedad relativa externa:</strong> ${dash(humidity)}%<br>
+      <strong>Lluvia / precipitación:</strong> ${dash(rain)}<br>
+      <strong>Viento:</strong> ${dash(wind)}
+    </div>
+  `;
+}
+
+function getAlertsReportHTML(alerts) {
+  return `
+    <h2>Alertas</h2>
+    ${
+      alerts.length
+        ? `<ul>${alerts.map(a => `<li><strong>${escapeHtml(a.type)}:</strong> ${escapeHtml(a.detail)} (${escapeHtml(a.source)})</li>`).join('')}</ul>`
+        : '<p>No hay alertas para los filtros seleccionados.</p>'
+    }
+  `;
+}
+
 function buildReportHTMLFromRows(rows) {
   const filters = getReportFilters();
+  const definition = getReportDefinition(filters.type);
   const alerts = generateAlerts(rows);
-  const current = state.weather?.current || {};
-  const htmlRows = rows.map(s => `<tr><td>${escapeHtml(s.id)}</td><td>${escapeHtml(statusLabels[normalizeUiStatus(s.status)] || s.status)}</td><td>${dash(s.n)}</td><td>${dash(s.p)}</td><td>${dash(s.k)}</td><td>${dash(s.soilHumidity ?? s.humidity)}</td><td>${dash(s.airTemp ?? s.temp)}</td><td>${escapeHtml(s.location || '--')}</td><td>${s.timestamp ? formatDateTime(s.timestamp) : 'Sin lectura'}</td></tr>`).join('');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Informe NPK</title><style>body{font-family:Arial,sans-serif;line-height:1.45;padding:28px;color:#10231f}table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid #d8e4dd;padding:8px;text-align:left}th{background:#edf7f1}.muted{color:#5f7269}.box{background:#f5faf7;border:1px solid #d8e4dd;border-radius:12px;padding:14px;margin:12px 0}h1{color:#0f3b2d}</style></head><body><h1>Informe técnico NPK Smart Cacao</h1><p class="muted">Generado: ${formatDateTime(new Date().toISOString())}</p><div class="box"><strong>Tipo:</strong> ${escapeHtml(filters.type)}<br><strong>ID sensor:</strong> ${escapeHtml(filters.sensorId)}<br><strong>Fecha inicial:</strong> ${escapeHtml(filters.start || 'No definida')}<br><strong>Fecha final:</strong> ${escapeHtml(filters.end || 'No definida')}<br><strong>Ubicación climática:</strong> Chigorodó, Antioquia</div><h2>Resumen</h2><p>Sensores incluidos: ${rows.length}. Alertas detectadas: ${alerts.length}. Temperatura externa actual: ${dash(current.temperature_2m)}°C. Humedad relativa externa: ${dash(current.relative_humidity_2m)}%.</p>${rows.length ? `<h2>Lecturas reales</h2><table><thead><tr><th>ID sensor</th><th>Estado</th><th>N</th><th>P</th><th>K</th><th>Humedad suelo</th><th>Temperatura aire</th><th>Ubicación</th><th>Última lectura</th></tr></thead><tbody>${htmlRows}</tbody></table>` : '<p><strong>No hay lecturas reales para los filtros seleccionados.</strong></p>'}<h2>Alertas</h2>${alerts.length ? `<ul>${alerts.map(a => `<li><strong>${escapeHtml(a.type)}:</strong> ${escapeHtml(a.detail)} (${escapeHtml(a.source)})</li>`).join('')}</ul>` : '<p>No hay alertas para los filtros seleccionados.</p>'}</body></html>`;
+
+  const htmlRows = rows.map(sensor => `
+    <tr>
+      ${definition.columns.map(column => `
+        <td>${escapeHtml(formatReportValue(sensor, column.key))}</td>
+      `).join('')}
+    </tr>
+  `).join('');
+
+  const tableHTML = definition.includeRows
+    ? `
+      ${
+        rows.length
+          ? `
+            <h2>Lecturas reales · ${escapeHtml(definition.label)}</h2>
+            <table>
+              <thead>
+                <tr>
+                  ${definition.columns.map(column => `<th>${escapeHtml(column.label)}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${htmlRows}
+              </tbody>
+            </table>
+          `
+          : '<p><strong>No hay lecturas reales para los filtros seleccionados.</strong></p>'
+      }
+    `
+    : '';
+
+  const weatherHTML = definition.includeWeather ? getWeatherReportHTML() : '';
+  const alertsHTML = definition.includeAlerts ? getAlertsReportHTML(alerts) : '';
+
+  return `
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8">
+      <title>Informe ${escapeHtml(definition.label)} · NPK Smart Cacao</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          color: #10231f;
+          padding: 28px;
+          line-height: 1.5;
+        }
+
+        h1 {
+          margin-bottom: 4px;
+          color: #0f3d2e;
+        }
+
+        h2 {
+          margin-top: 26px;
+          color: #14553f;
+        }
+
+        .box {
+          background: #f1f7f3;
+          border: 1px solid #d5e8dc;
+          border-radius: 12px;
+          padding: 14px;
+          margin: 14px 0;
+        }
+
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 14px;
+          font-size: 12px;
+        }
+
+        th, td {
+          border: 1px solid #d7e5dc;
+          padding: 8px;
+          text-align: left;
+        }
+
+        th {
+          background: #e6f4ec;
+          color: #12382b;
+        }
+
+        tr:nth-child(even) {
+          background: #f8fbf9;
+        }
+
+        ul {
+          padding-left: 20px;
+        }
+      </style>
+    </head>
+    <body>
+      <h1>Informe técnico NPK Smart Cacao</h1>
+      <p>Generado: ${escapeHtml(formatDateTime(new Date().toISOString()))}</p>
+
+      <div class="box">
+        <strong>Tipo de informe:</strong> ${escapeHtml(definition.label)}<br>
+        <strong>ID sensor:</strong> ${escapeHtml(filters.sensorId || 'todos')}<br>
+        <strong>Fecha inicial:</strong> ${escapeHtml(filters.start || 'No definida')}<br>
+        <strong>Fecha final:</strong> ${escapeHtml(filters.end || 'No definida')}
+      </div>
+
+      <h2>Resumen</h2>
+      <p>
+        Lecturas incluidas: ${rows.length}.
+        Tipo seleccionado: ${escapeHtml(definition.label)}.
+      </p>
+
+      ${tableHTML}
+      ${weatherHTML}
+      ${alertsHTML}
+    </body>
+    </html>
+  `;
 }
 
 async function previewReport() {
@@ -1395,60 +1658,184 @@ async function downloadReportHTML() {
 
 async function downloadReportCSV() {
   const rows = await getReportRows();
-  if (!rows.length) return toast('Sin datos', 'No hay lecturas reales para exportar con esos filtros.');
-  const headers = ['sensorId', 'estado', 'n', 'p', 'k', 'humedadSuelo', 'temperaturaAire', 'ubicacion', 'lat', 'lng', 'timestamp'];
-  const csv = [headers, ...rows.map(s => [s.id, normalizeUiStatus(s.status), s.n, s.p, s.k, s.soilHumidity ?? s.humidity, s.airTemp ?? s.temp, s.location, s.lat, s.lng, s.timestamp])].map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(',')).join('\n');
-  const name = `informe-npk-${Date.now()}.csv`;
+  const filters = getReportFilters();
+  const definition = getReportDefinition(filters.type);
+
+  if (!rows.length && definition.includeRows) {
+    return toast('Sin datos', 'No hay lecturas reales para exportar con esos filtros.');
+  }
+
+  let csv = '';
+
+  if (definition.includeRows) {
+    const headers = definition.columns.map(column => column.label);
+
+    const dataRows = rows.map(sensor =>
+      definition.columns.map(column => formatReportValue(sensor, column.key))
+    );
+
+    csv = [headers, ...dataRows]
+      .map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(','))
+      .join('\n');
+  }
+
+  if (filters.type === 'meteorologia') {
+    const current = state.weather?.current || {};
+    const headers = ['ubicacion', 'temperatura_externa', 'humedad_relativa', 'lluvia_precipitacion', 'viento'];
+    const dataRows = [[
+      'Chigorodó, Antioquia',
+      current.temperature_2m ?? current.temperature ?? current.temp ?? '',
+      current.relative_humidity_2m ?? current.humidity ?? '',
+      current.rain ?? current.precipitation ?? current.precipitation_probability ?? '',
+      current.wind_speed_10m ?? current.windspeed ?? ''
+    ]];
+
+    csv = [headers, ...dataRows]
+      .map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(','))
+      .join('\n');
+  }
+
+  if (filters.type === 'alertas') {
+    const alerts = generateAlerts(rows);
+    const headers = ['tipo', 'detalle', 'fuente'];
+    const dataRows = alerts.map(alert => [
+      alert.type,
+      alert.detail,
+      alert.source
+    ]);
+
+    csv = [headers, ...dataRows]
+      .map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(','))
+      .join('\n');
+  }
+
+  const name = `informe-${getReportFileSuffix()}-${Date.now()}.csv`;
   downloadText(name, csv, 'text/csv;charset=utf-8;');
   addGeneratedReport(name, rows.length, 'CSV');
 }
 
 async function printReport() {
   const rows = await getReportRows();
+  const filters = getReportFilters();
+  const definition = getReportDefinition(filters.type);
+
   if (window.jspdf?.jsPDF) {
-    const doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
-    const filters = getReportFilters();
+    const doc = new window.jspdf.jsPDF({
+      orientation: 'landscape',
+      unit: 'pt',
+      format: 'a4'
+    });
+
     let y = 42;
+
     doc.setFontSize(18);
-    doc.text('Informe técnico NPK Smart Cacao', 40, y);
+    doc.text(`Informe técnico · ${definition.label}`, 40, y);
+
     y += 24;
     doc.setFontSize(10);
     doc.text(`Generado: ${formatDateTime(new Date().toISOString())}`, 40, y);
+
     y += 18;
     doc.text(`Sensor: ${filters.sensorId || 'todos'} | Rango: ${filters.start || '--'} a ${filters.end || '--'}`, 40, y);
-    y += 26;
-    doc.setFontSize(11);
-    doc.text('ID sensor', 40, y); doc.text('N', 170, y); doc.text('P', 215, y); doc.text('K', 260, y); doc.text('Hum. suelo', 305, y); doc.text('Temp. aire', 405, y); doc.text('Estado', 505, y); doc.text('Última lectura', 610, y);
-    y += 12;
-    doc.line(40, y, 800, y);
-    y += 18;
-    if (!rows.length) {
-      doc.text('No hay lecturas reales para los filtros seleccionados.', 40, y);
-    } else {
-      rows.slice(0, 30).forEach(s => {
-        doc.text(String(s.id || '--').slice(0, 20), 40, y);
-        doc.text(String(dash(s.n)), 170, y);
-        doc.text(String(dash(s.p)), 215, y);
-        doc.text(String(dash(s.k)), 260, y);
-        doc.text(String(dash(s.soilHumidity ?? s.humidity)), 305, y);
-        doc.text(String(dash(s.airTemp ?? s.temp)), 405, y);
-        doc.text(String(statusLabels[normalizeUiStatus(s.status)] || s.status).slice(0, 14), 505, y);
-        doc.text(String(s.timestamp ? formatDateTime(s.timestamp) : 'Sin lectura').slice(0, 32), 610, y);
+
+    y += 28;
+
+    if (definition.includeRows) {
+      if (!rows.length) {
+        doc.text('No hay lecturas reales para los filtros seleccionados.', 40, y);
+      } else {
+        const columns = definition.columns;
+        const pageWidth = 760;
+        const startX = 40;
+        const colWidth = pageWidth / columns.length;
+
+        doc.setFontSize(9);
+
+        columns.forEach((column, index) => {
+          doc.text(String(column.label).slice(0, 18), startX + index * colWidth, y);
+        });
+
+        y += 12;
+        doc.line(40, y, 800, y);
         y += 18;
-        if (y > 540) { doc.addPage(); y = 42; }
-      });
+
+        rows.slice(0, 40).forEach(sensor => {
+          columns.forEach((column, index) => {
+            const value = formatReportValue(sensor, column.key);
+            doc.text(String(value).slice(0, 22), startX + index * colWidth, y);
+          });
+
+          y += 18;
+
+          if (y > 540) {
+            doc.addPage();
+            y = 42;
+          }
+        });
+      }
     }
-    const name = `informe-npk-${Date.now()}.pdf`;
+
+    if (definition.includeWeather) {
+      const current = state.weather?.current || {};
+
+      doc.setFontSize(12);
+      doc.text('Meteorología', 40, y);
+      y += 20;
+
+      doc.setFontSize(10);
+      doc.text(`Ubicación: Chigorodó, Antioquia`, 40, y);
+      y += 16;
+      doc.text(`Temperatura externa: ${dash(current.temperature_2m ?? current.temperature ?? current.temp)}°C`, 40, y);
+      y += 16;
+      doc.text(`Humedad relativa externa: ${dash(current.relative_humidity_2m ?? current.humidity)}%`, 40, y);
+      y += 16;
+      doc.text(`Lluvia / precipitación: ${dash(current.rain ?? current.precipitation ?? current.precipitation_probability)}`, 40, y);
+      y += 16;
+      doc.text(`Viento: ${dash(current.wind_speed_10m ?? current.windspeed)}`, 40, y);
+      y += 22;
+    }
+
+    if (definition.includeAlerts) {
+      const alerts = generateAlerts(rows);
+
+      doc.setFontSize(12);
+      doc.text('Alertas', 40, y);
+      y += 20;
+
+      doc.setFontSize(9);
+
+      if (!alerts.length) {
+        doc.text('No hay alertas para los filtros seleccionados.', 40, y);
+      } else {
+        alerts.slice(0, 25).forEach(alert => {
+          doc.text(`${alert.type}: ${alert.detail}`.slice(0, 110), 40, y);
+          y += 16;
+
+          if (y > 540) {
+            doc.addPage();
+            y = 42;
+          }
+        });
+      }
+    }
+
+    const name = `informe-${getReportFileSuffix()}-${Date.now()}.pdf`;
     doc.save(name);
     addGeneratedReport(name, rows.length, 'PDF');
     toast('PDF generado', name);
     return;
   }
+
   const win = window.open('', '_blank');
-  if (!win) return toast('Ventana bloqueada', 'Permite ventanas emergentes para imprimir o guardar en PDF.');
+
+  if (!win) {
+    return toast('Ventana bloqueada', 'Permite ventanas emergentes para imprimir o guardar en PDF.');
+  }
+
   win.document.write(buildReportHTMLFromRows(rows));
   win.document.close();
   win.focus();
+
   setTimeout(() => win.print(), 500);
 }
 
