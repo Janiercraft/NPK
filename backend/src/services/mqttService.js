@@ -19,8 +19,22 @@ const setIO = (ioInstance) => {
   io = ioInstance;
 };
 
-// Convierte y valida números
-const toNumber = (value) => {
+// NPK obligatorio
+const toRequiredNumber = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const number = Number(value);
+  return Number.isNaN(number) ? null : number;
+};
+
+// Humedad y temperatura opcionales
+const toOptionalNumber = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
   const number = Number(value);
   return Number.isNaN(number) ? null : number;
 };
@@ -58,32 +72,35 @@ client.on("message", async (topic, message) => {
       return;
     }
 
-    const nitrogeno = toNumber(data.nitrogeno);
-    const fosforo = toNumber(data.fosforo);
-    const potasio = toNumber(data.potasio);
+    const nitrogeno = toRequiredNumber(data.nitrogeno);
+    const fosforo = toRequiredNumber(data.fosforo);
+    const potasio = toRequiredNumber(data.potasio);
 
-    const humedad_suelo = toNumber(
-      data.humedad_suelo ?? data.humedadSuelo ?? data.humedad ?? data.humidity
+    const humedad_suelo = toOptionalNumber(
+      data.humedad_suelo ??
+      data.humedadSuelo ??
+      data.humedad ??
+      data.humidity
     );
 
-    const temperatura_ambiente = toNumber(
-      data.temperatura_ambiente ?? data.temperaturaAmbiente ?? data.temperatura ?? data.temp
+    const temperatura_ambiente = toOptionalNumber(
+      data.temperatura_ambiente ??
+      data.temperaturaAmbiente ??
+      data.temperatura ??
+      data.temp
     );
 
+    // Solo NPK es obligatorio
     if (
       nitrogeno === null ||
       fosforo === null ||
-      potasio === null ||
-      humedad_suelo === null ||
-      temperatura_ambiente === null
+      potasio === null
     ) {
-      console.error("Datos inválidos recibidos:", {
+      console.error("Datos NPK inválidos recibidos:", {
         sensorId,
         nitrogeno,
         fosforo,
         potasio,
-        humedad_suelo,
-        temperatura_ambiente,
         payloadOriginal: data
       });
       return;
