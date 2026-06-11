@@ -6,22 +6,26 @@ const {
   getLatestData,
   getAllLatestSensors,
   getLatestBySensorId,
+  getHistory,
   getHistoryBySensorId
 } = require("../controllers/sensorController");
 
-// Devuelve la última lectura global
+// Última lectura global
 router.get("/latest", getLatestData);
 
-// Devuelve la última lectura de cada sensor_id
+// Última lectura de cada sensor
 router.get("/all", getAllLatestSensors);
 
-// También permite consultar todos los sensores desde /api/sensor
+// También permite consultar todos desde /api/sensor
 router.get("/", getAllLatestSensors);
 
-// Devuelve la última lectura de un sensor específico
+// Historial general para informes
+router.get("/history", getHistory);
+
+// Última lectura de un sensor específico
 router.get("/:sensor_id/latest", getLatestBySensorId);
 
-// Devuelve el historial de un sensor específico
+// Historial de un sensor específico
 router.get("/:sensor_id/history", getHistoryBySensorId);
 
 module.exports = router;

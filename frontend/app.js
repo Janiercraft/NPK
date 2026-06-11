@@ -28,13 +28,7 @@ const API_CONFIG = {
   ],
 
   reportEndpoints: [
-    '/api/sensor/all',
-    '/api/sensor',
-    '/api/sensor/latest',
-    '/api/lecturas',
-    '/lecturas',
-    '/api/sensores',
-    '/api/sensors'
+  '/api/sensor/history',
   ],
 
   streamEndpoint: '/api/sensor/stream',
@@ -1333,11 +1327,36 @@ async function fetchJsonCandidate(endpoints, { params = {}, timeoutMs = API_CONF
 
 async function getReportRows() {
   const filters = getReportFilters();
-  const result = await fetchJsonCandidate(API_CONFIG.reportEndpoints, { params: filters, timeoutMs: 5000 });
-  if (result.ok) {
-    const backendRows = extractSensorRows(result.data).map(normalizeSensorReading).filter(Boolean);
-    if (backendRows.length) return filterRowsLocally(backendRows);
+
+  const sensorId = filters.sensorId || "todos";
+
+  const endpoint = sensorId !== "todos"
+    ? `/api/sensor/${encodeURIComponent(sensorId)}/history`
+    : "/api/sensor/history";
+
+  const params = {
+    start: filters.start,
+    end: filters.end,
+    limit: 5000
+  };
+
+  if (sensorId !== "todos") {
+    params.sensor_id = sensorId;
   }
+
+  const result = await fetchJsonCandidate([endpoint], {
+    params,
+    timeoutMs: 7000
+  });
+
+  if (result.ok) {
+    const backendRows = extractSensorRows(result.data)
+      .map(normalizeSensorReading)
+      .filter(Boolean);
+
+    return filterRowsLocally(backendRows);
+  }
+
   return filterRowsLocally(getAllSensors());
 }
 
