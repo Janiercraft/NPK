@@ -6,6 +6,10 @@ const connectDB = require("./config/database");
 
 connectDB();
 
+const { startHistoryJob } = require("./services/historyService");
+
+startHistoryJob();
+
 require("./services/mqttService");
 
 const PORT = process.env.PORT || 3000;
