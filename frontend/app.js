@@ -1337,12 +1337,9 @@ async function getReportRows() {
   const params = {
     start: filters.start,
     end: filters.end,
+    source: "todos",
     limit: 5000
   };
-
-  if (sensorId !== "todos") {
-    params.sensor_id = sensorId;
-  }
 
   const result = await fetchJsonCandidate([endpoint], {
     params,
