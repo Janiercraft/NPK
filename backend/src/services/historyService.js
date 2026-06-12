@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 const SensorData = require("../models/SensorData");
 const SensorHistory = require("../models/SensorHistory");
 
-const DAYS_TO_KEEP_IN_CURRENT = 0;
+const DAYS_TO_KEEP_IN_CURRENT = 30;
 const BATCH_SIZE = 1000;
 
 const moveOldDataToHistory = async ({
