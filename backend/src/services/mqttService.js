@@ -2,7 +2,7 @@ const mqtt = require("mqtt");
 const SensorData = require("../models/SensorData");
 
 // Broker MQTT desde .env o valor por defecto
-const MQTT_BROKER = process.env.MQTT_BROKER || "mqtt://broker.emqx.io:1883";
+const MQTT_BROKER = process.env.MQTT_BROKER || "mqtt://broker.hivemq.com:1883";
 
 console.log("Conectando a MQTT:", MQTT_BROKER);
 
