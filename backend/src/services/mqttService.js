@@ -1,5 +1,6 @@
 const mqtt = require("mqtt");
 const SensorData = require("../models/SensorData");
+const { saveEspLog, setIO: setLogIO } = require("./logService");
 
 // Broker MQTT desde .env o valor por defecto
 const MQTT_BROKER = process.env.MQTT_BROKER || "mqtt://broker.hivemq.com:1883";
@@ -17,6 +18,7 @@ let io = null;
 
 const setIO = (ioInstance) => {
   io = ioInstance;
+  setLogIO(ioInstance);
 };
 
 // NPK obligatorio
@@ -39,33 +41,90 @@ const toOptionalNumber = (value) => {
   return Number.isNaN(number) ? null : number;
 };
 
+const getSensorIdFromTopic = (topic) => {
+  const topicParts = topic.split("/");
+  return topicParts[1] || null;
+};
+
+const isLogTopic = (topic) => {
+  const parts = topic.split("/");
+
+  if (parts.length < 3 || parts[0] !== "npk") {
+    return false;
+  }
+
+  return ["log", "logs"].includes(parts[2].toLowerCase());
+};
+
+const parseSensorData = (rawPayload) => {
+  try {
+    return JSON.parse(rawPayload);
+  } catch (error) {
+    throw new Error(`Payload JSON inválido: ${error.message}`);
+  }
+};
+
 client.on("connect", () => {
   console.log("MQTT conectado");
 
-  client.subscribe("npk/+/data", (err) => {
+  // Datos NPK
+  client.subscribe("npk/+/data", { qos: 1 }, (err) => {
     if (err) {
-      console.error("Error al suscribirse:", err.message);
+      console.error("Error al suscribirse a datos:", err.message);
       return;
     }
 
     console.log("Suscrito a: npk/+/data");
   });
+
+  // Logs del ESP32. Se contemplan ambas variantes: /log y /logs.
+  client.subscribe(["npk/+/log", "npk/+/logs"], { qos: 1 }, (err) => {
+    if (err) {
+      console.error("Error al suscribirse a logs:", err.message);
+      return;
+    }
+
+    console.log("Suscrito a: npk/+/log y npk/+/logs");
+  });
 });
 
 client.on("message", async (topic, message) => {
-  try {
-    const rawPayload = message.toString();
+  const rawPayload = message.toString();
+  const sensorId = getSensorIdFromTopic(topic);
 
+  // IMPORTANTE: los logs se procesan primero y nunca se descartan por
+  // tener JSON inválido, campos faltantes o formato inesperado.
+  if (isLogTopic(topic)) {
+    try {
+      const savedLog = await saveEspLog({
+        topic,
+        rawPayload,
+        sensorId
+      });
+
+      console.log("Log ESP32 guardado:", savedLog.id);
+    } catch (error) {
+      // Si MongoDB falla, conservamos el mensaje en consola para que no
+      // desaparezca del proceso. No se intenta interpretar el log como
+      // lectura de sensor.
+      console.error("Error guardando log ESP32:", error.message);
+      console.error("Topic del log:", topic);
+      console.error("Payload del log:", rawPayload);
+    }
+
+    return;
+  }
+
+  if (topic !== `npk/${sensorId}/data`) {
+    return;
+  }
+
+  try {
     console.log("Mensaje MQTT recibido");
     console.log("Topic:", topic);
     console.log("Payload crudo:", rawPayload);
 
-    const data = JSON.parse(rawPayload);
-
-    // Ejemplo de topic:
-    // npk/001/data
-    const topicParts = topic.split("/");
-    const sensorId = topicParts[1];
+    const data = parseSensorData(rawPayload);
 
     if (!sensorId) {
       console.error("Topic inválido. No se pudo obtener sensorId:", topic);
@@ -128,7 +187,7 @@ client.on("message", async (topic, message) => {
 
     console.log("Guardado en MongoDB:", saved._id);
 
-    // Enviar al frontend en tiempo real, si después usas Socket.IO
+    // Enviar al frontend en tiempo real
     if (io) {
       io.emit("npk-data", {
         sensor_id: saved.sensor_id,
@@ -157,7 +216,6 @@ client.on("close", () => {
   console.log("Conexión MQTT cerrada");
 });
 
-// Export compatible con deviceRoutes
 module.exports = {
   client,
   setIO,
