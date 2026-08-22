@@ -9,7 +9,7 @@ const CHIGORODO = {
 };
 
 const API_CONFIG = {
-  baseUrl: 'http://localhost:3000',
+  baseUrl: 'https://npk-yvtg.onrender.com',
 
   // Primero se consultan las rutas reales del backend actual.
   // /api/sensor/all debe devolver todos los sensores de MongoDB.
