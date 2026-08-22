@@ -9,7 +9,7 @@ const CHIGORODO = {
 };
 
 const API_CONFIG = {
-  baseUrl: 'https://npk-yvtg.onrender.com',
+  baseUrl: 'http://localhost:3000',
 
   // Primero se consultan las rutas reales del backend actual.
   // /api/sensor/all debe devolver todos los sensores de MongoDB.
@@ -32,6 +32,8 @@ const API_CONFIG = {
   ],
 
   streamEndpoint: '/api/sensor/stream',
+  logsEndpoint: '/api/logs',
+  latestLogsEndpoint: '/api/logs/latest',
   pollIntervalMs: 10000,
   timeoutMs: 7000
 };
@@ -77,6 +79,11 @@ let heatLayers = {};
 let chartInstances = [];
 let pollTimer;
 let streamSource;
+let logSocket = null;
+let logsPollingTimer = null;
+let espLogs = [];
+let logsPaused = false;
+let logsLoadedLimit = 250;
 
 function init() {
   setTimeout(() => $('#loadingScreen')?.classList.add('done'), 500);
@@ -92,7 +99,9 @@ function init() {
   loadSensorsFromBackend({ silent: true });
   startPolling();
   startRealtimeStream();
-  toast('Frontend listo', 'La página consultará el backend y mostrará solo datos recibidos o IDs locales pendientes.');
+  initLogsRealtime();
+  loadLogsFromBackend({ silent: true });
+  toast('Frontend listo', 'La página consultará el backend y mostrará sensores y logs ESP32 en tiempo real.');
 }
 
 function loadJSON(key, fallback) {
@@ -262,6 +271,25 @@ function initInteractions() {
     renderSensorsTable();
   });
   $('#refreshDataBtn')?.addEventListener('click', () => loadSensorsFromBackend());
+  $('#refreshLogsBtn')?.addEventListener('click', () => loadLogsFromBackend());
+  $('#logsLevelFilter')?.addEventListener('change', renderLogs);
+  $('#logsSensorFilter')?.addEventListener('change', renderLogs);
+  $('#logsSearch')?.addEventListener('input', debounce(renderLogs, 180));
+  $('#logsLimit')?.addEventListener('change', () => {
+    const limit = Number($('#logsLimit')?.value || 250);
+    logsLoadedLimit = Number.isFinite(limit) ? limit : 250;
+    loadLogsFromBackend({ silent: true });
+  });
+  $('#pauseLogsBtn')?.addEventListener('click', toggleLogsPause);
+  $('#clearLogsViewBtn')?.addEventListener('click', () => {
+    espLogs = [];
+    renderLogs();
+    toast('Pantalla limpiada', 'Los logs permanecen guardados en MongoDB.');
+  });
+  $('#loadMoreLogsBtn')?.addEventListener('click', () => {
+    logsLoadedLimit = Math.min(Math.max(logsLoadedLimit + 250, 250), 5000);
+    loadLogsFromBackend({ silent: true });
+  });
   $('#homeRefreshBtn')?.addEventListener('click', () => loadSensorsFromBackend());
   $('#refreshWeatherBtn')?.addEventListener('click', () => loadWeather());
   $('#refreshAnalyticsBtn')?.addEventListener('click', () => { loadSensorsFromBackend(); drawAllCharts(); });
@@ -288,6 +316,202 @@ function initInteractions() {
   $('#mapFullscreen')?.addEventListener('click', () => $('#sensorMap')?.requestFullscreen?.());
 }
 
+
+function initLogsRealtime() {
+  if (!window.io) {
+    setLogsRealtimeState(false, 'Socket.IO no está disponible en el navegador.');
+    return;
+  }
+
+  try {
+    logSocket?.disconnect();
+    logSocket = io(API_CONFIG.baseUrl, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1500,
+      timeout: 7000
+    });
+
+    logSocket.on('connect', () => {
+      setLogsRealtimeState(true, `Socket.IO conectado · ${logSocket.id}`);
+      setText('#logsRealtimeState', 'ON');
+    });
+
+    logSocket.on('server-ready', () => {
+      setLogsRealtimeState(true, 'Socket.IO listo para eventos del backend.');
+    });
+
+    logSocket.on('esp-log', log => {
+      if (!log || logsPaused) return;
+      const incoming = normalizeEspLog(log);
+      if (!incoming) return;
+      if (incoming.id && espLogs.some(item => item.id === incoming.id)) return;
+
+      espLogs.unshift(incoming);
+      if (espLogs.length > 5000) espLogs.length = 5000;
+      updateLogsSensorFilter();
+      renderLogs();
+    });
+
+    logSocket.on('disconnect', reason => {
+      setLogsRealtimeState(false, `Socket.IO desconectado: ${reason}`);
+    });
+
+    logSocket.on('connect_error', error => {
+      setLogsRealtimeState(false, `Socket.IO: ${error?.message || 'error de conexión'}`);
+    });
+  } catch (error) {
+    console.error('No fue posible iniciar Socket.IO:', error);
+    setLogsRealtimeState(false, error.message);
+  }
+}
+
+function setLogsRealtimeState(connected, message = '') {
+  const stateText = $('#logsConnectionText');
+  const chip = $('#logsLiveChip');
+  if (stateText) stateText.textContent = message || (connected ? 'Tiempo real activo' : 'Tiempo real desconectado');
+  if (chip) {
+    chip.textContent = connected ? '● Escuchando' : '○ Desconectado';
+    chip.classList.toggle('success', connected);
+    chip.classList.toggle('danger-chip', !connected);
+  }
+  setText('#logsRealtimeState', connected ? 'ON' : 'OFF');
+}
+
+function toggleLogsPause() {
+  logsPaused = !logsPaused;
+  const button = $('#pauseLogsBtn');
+  if (button) button.textContent = logsPaused ? '▶ Reanudar' : '⏸ Pausar';
+  const chip = $('#logsLiveChip');
+  if (chip && logsPaused) {
+    chip.textContent = 'Ⅱ Pausado';
+    chip.classList.remove('success');
+  } else if (chip) {
+    chip.textContent = '● Escuchando';
+    chip.classList.add('success');
+  }
+  setLogsRealtimeState(Boolean(logSocket?.connected), logsPaused ? 'Recepción en pausa en pantalla.' : 'Recepción en tiempo real activa.');
+}
+
+function normalizeEspLog(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const level = String(raw.level ?? 'INFO').toUpperCase();
+  const receivedAt = raw.received_at ?? raw.receivedAt ?? raw.timestamp ?? new Date().toISOString();
+  return {
+    id: raw.id ? String(raw.id) : `${raw.sensor_id || 'unknown'}-${receivedAt}-${raw.topic || ''}-${Math.random().toString(36).slice(2)}`,
+    sensor_id: raw.sensor_id ?? raw.sensorId ?? '—',
+    level,
+    message: raw.message ?? raw.msg ?? raw.log ?? '',
+    topic: raw.topic ?? '—',
+    raw_payload: raw.raw_payload ?? (raw.payload !== undefined ? safeJsonStringify(raw.payload) : ''),
+    payload: raw.payload ?? null,
+    device_timestamp: raw.device_timestamp ?? raw.deviceTimestamp ?? null,
+    received_at: receivedAt
+  };
+}
+
+async function loadLogsFromBackend({ silent = false } = {}) {
+  const limit = Math.min(Math.max(Number(logsLoadedLimit || $('#logsLimit')?.value || 250), 1), 5000);
+  const params = {
+    limit,
+    sensor_id: $('#logsSensorFilter')?.value || 'todos',
+    level: $('#logsLevelFilter')?.value || 'todos'
+  };
+
+  try {
+    const response = await fetchWithTimeout(buildUrlWithParams(API_CONFIG.logsEndpoint, params), {
+      headers: { Accept: 'application/json' }
+    }, API_CONFIG.timeoutMs);
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const payload = await response.json();
+    const rows = Array.isArray(payload) ? payload : (Array.isArray(payload.logs) ? payload.logs : []);
+    espLogs = rows.map(normalizeEspLog).filter(Boolean);
+    logsLoadedLimit = limit;
+    updateLogsSensorFilter();
+    renderLogs();
+    setLogsRealtimeState(Boolean(logSocket?.connected), `Historial cargado · ${espLogs.length} log(s).`);
+    if (!silent) toast('Logs actualizados', `${espLogs.length} registro(s) cargados desde MongoDB.`);
+  } catch (error) {
+    console.error('Error cargando logs ESP32:', error);
+    setLogsRealtimeState(Boolean(logSocket?.connected), `No se pudo cargar el historial: ${error.message}`);
+    renderLogs();
+    if (!silent) toast('Error de logs', 'No se pudo consultar /api/logs. Revisa que el backend actualizado esté desplegado.');
+  }
+}
+
+function updateLogsSensorFilter() {
+  const select = $('#logsSensorFilter');
+  if (!select) return;
+  const current = select.value || 'todos';
+  const sensorIds = [...new Set(espLogs.map(log => String(log.sensor_id || '').trim()).filter(id => id && id !== '—'))]
+    .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+  select.innerHTML = '<option value="todos">Todos los sensores</option>'
+    + sensorIds.map(id => `<option value="${escapeHtml(id)}">${escapeHtml(id)}</option>`).join('');
+  if (sensorIds.includes(current)) select.value = current;
+}
+
+function getFilteredLogs() {
+  const sensor = String($('#logsSensorFilter')?.value || 'todos');
+  const level = String($('#logsLevelFilter')?.value || 'todos').toUpperCase();
+  const search = String($('#logsSearch')?.value || '').trim().toLowerCase();
+
+  return espLogs.filter(log => {
+    if (sensor !== 'todos' && String(log.sensor_id) !== sensor) return false;
+    if (level !== 'TODOS' && String(log.level).toUpperCase() !== level) return false;
+    if (search) {
+      const haystack = [
+        log.message,
+        log.topic,
+        log.raw_payload,
+        log.sensor_id,
+        log.level
+      ].map(value => String(value ?? '')).join(' ').toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+function renderLogs() {
+  const filtered = getFilteredLogs();
+  const body = $('#logsTableBody');
+  if (!body) return;
+
+  const errorCount = espLogs.filter(log => ['ERROR', 'FATAL'].includes(String(log.level).toUpperCase())).length;
+  const sensorCount = new Set(espLogs.map(log => String(log.sensor_id || '').trim()).filter(Boolean)).size;
+  setText('#logsTotalCount', String(filtered.length));
+  setText('#logsErrorCount', String(errorCount));
+  setText('#logsSensorCount', String(sensorCount));
+
+  if (!filtered.length) {
+    body.innerHTML = `<tr><td colspan="6" class="table-empty">${espLogs.length ? 'No hay logs que coincidan con los filtros.' : 'No hay logs cargados todavía.'}</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = filtered.map(log => {
+    const safeLevel = ['TRACE','DEBUG','INFO','WARN','WARNING','ERROR','FATAL'].includes(log.level) ? log.level : 'INFO';
+    const levelClass = safeLevel.toLowerCase().replace('warning', 'warn');
+    const raw = String(log.raw_payload ?? '');
+    const preview = raw.length > 140 ? `${raw.slice(0, 140)}…` : raw;
+    const rawBlock = raw.length > 140 ? `<details class="log-payload-details"><summary>Ver completo</summary><pre>${escapeHtml(raw)}</pre></details>` : escapeHtml(raw || '—');
+    return `<tr class="log-row log-${levelClass}">
+      <td><time datetime="${escapeHtml(log.received_at)}">${escapeHtml(formatDateTime(log.received_at))}</time></td>
+      <td><span class="log-sensor">${escapeHtml(String(log.sensor_id ?? '—'))}</span></td>
+      <td><span class="log-level ${escapeHtml(levelClass)}">${escapeHtml(safeLevel)}</span></td>
+      <td class="log-message">${escapeHtml(String(log.message || preview || '—'))}</td>
+      <td><code class="log-topic">${escapeHtml(String(log.topic || '—'))}</code></td>
+      <td class="log-payload">${raw.length > 140 ? `${escapeHtml(preview)}<br>${rawBlock}` : rawBlock}</td>
+    </tr>`;
+  }).join('');
+}
+
+function safeJsonStringify(value) {
+  try { return JSON.stringify(value); } catch { return String(value); }
+}
+
 function renderAll() {
   syncAlertLifecycle(generateAlerts(getAllSensors()));
   renderConnectionState();
@@ -297,6 +521,8 @@ function renderAll() {
   renderSensorsTable();
   renderAlerts();
   renderReportsList();
+  updateLogsSensorFilter();
+  renderLogs();
   renderMapMarkers(state.currentMapFilter);
   renderHeatmapGrid();
   drawAllCharts();

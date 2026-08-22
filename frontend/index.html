@@ -129,6 +129,7 @@
         <button class="side-item" data-view="meteorologia"><span>🌦️</span><b>Meteorología</b></button>
         <button class="side-item" data-view="estadisticas"><span>📈</span><b>Analíticas</b></button>
         <button class="side-item" data-view="alertas"><span>🚨</span><b>Alertas</b></button>
+        <button class="side-item" data-view="logs"><span>🧾</span><b>Logs ESP32</b></button>
         <button class="side-item" data-view="reportes"><span>📄</span><b>Informes</b></button>
       </nav>
     </aside>
@@ -150,7 +151,7 @@
       <div class="breadcrumb" id="breadcrumb">Inicio / Dashboard</div>
 
       <main class="view-container">
-        <section class="view active" id="view-inicio" data-search-keywords="inicio portada sensores dashboard mapa meteorologia alertas informes">
+        <section class="view active" id="view-inicio" data-search-keywords="inicio portada sensores dashboard mapa meteorologia alertas logs esp32 informes">
           <div class="welcome-card reveal-now">
             <div>
               <span class="eyebrow"><span class="pulse-dot"></span> Plataforma frontend</span>
@@ -261,6 +262,113 @@
           <div class="panel"><div class="panel-head"><h3>Alertas detectadas</h3><span class="muted">NPK · Humedad · Temperatura · Conectividad</span></div><div class="alert-list" id="alertList"></div></div>
         </section>
 
+
+        <section class="view" id="view-logs" data-search-keywords="logs esp32 registros eventos mqtt socket tiempo real errores warnings info trace debug fatal">
+          <div class="view-head">
+            <div>
+              <span class="section-kicker">Monitoreo ESP32</span>
+              <h1>Logs del ESP32</h1>
+              <p class="muted">Todos los mensajes de log recibidos por MQTT se muestran aquí y se actualizan en tiempo real.</p>
+            </div>
+            <div class="view-actions">
+              <button class="btn btn-outline" id="refreshLogsBtn">↻ Actualizar</button>
+              <button class="btn btn-secondary" id="pauseLogsBtn">⏸ Pausar</button>
+            </div>
+          </div>
+
+          <div class="logs-status-grid">
+            <article class="metric-card log-metric">
+              <strong id="logsTotalCount">0</strong>
+              <span>Logs en pantalla</span>
+            </article>
+            <article class="metric-card log-metric">
+              <strong id="logsErrorCount">0</strong>
+              <span>Errores / críticos</span>
+            </article>
+            <article class="metric-card log-metric">
+              <strong id="logsSensorCount">0</strong>
+              <span>Sensores con logs</span>
+            </article>
+            <article class="metric-card log-metric">
+              <strong id="logsRealtimeState">OFF</strong>
+              <span>Tiempo real</span>
+            </article>
+          </div>
+
+          <div class="panel logs-toolbar">
+            <div class="logs-filter-grid">
+              <label>
+                Sensor
+                <select id="logsSensorFilter">
+                  <option value="todos">Todos los sensores</option>
+                </select>
+              </label>
+              <label>
+                Nivel
+                <select id="logsLevelFilter">
+                  <option value="todos">Todos</option>
+                  <option value="TRACE">TRACE</option>
+                  <option value="DEBUG">DEBUG</option>
+                  <option value="INFO">INFO</option>
+                  <option value="WARN">WARN</option>
+                  <option value="WARNING">WARNING</option>
+                  <option value="ERROR">ERROR</option>
+                  <option value="FATAL">FATAL</option>
+                </select>
+              </label>
+              <label class="logs-search-field">
+                Buscar
+                <input type="search" id="logsSearch" placeholder="mensaje, topic o payload...">
+              </label>
+              <label>
+                Mostrar
+                <select id="logsLimit">
+                  <option value="100">100</option>
+                  <option value="250" selected>250</option>
+                  <option value="500">500</option>
+                  <option value="1000">1000</option>
+                  <option value="5000">5000</option>
+                </select>
+              </label>
+            </div>
+            <div class="logs-toolbar-foot">
+              <span class="muted" id="logsConnectionText">Conectando al backend...</span>
+              <button class="btn btn-small btn-ghost" id="clearLogsViewBtn">Limpiar pantalla</button>
+            </div>
+          </div>
+
+          <article class="panel logs-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Consola de eventos</h3>
+                <p class="muted logs-help">Los logs no se eliminan de MongoDB al limpiar la pantalla. Puedes volver a cargarlos con Actualizar.</p>
+              </div>
+              <span class="chip success" id="logsLiveChip">● Escuchando</span>
+            </div>
+            <div class="logs-table-wrap">
+              <table class="logs-table">
+                <thead>
+                  <tr>
+                    <th>Hora recibida</th>
+                    <th>Sensor</th>
+                    <th>Nivel</th>
+                    <th>Mensaje</th>
+                    <th>Topic MQTT</th>
+                    <th>Payload</th>
+                  </tr>
+                </thead>
+                <tbody id="logsTableBody">
+                  <tr><td colspan="6" class="table-empty">Cargando logs...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <div class="logs-load-more">
+            <button class="btn btn-outline" id="loadMoreLogsBtn">Cargar más logs</button>
+          </div>
+        </section>
+
         <section class="view" id="view-reportes" data-search-keywords="reportes informes pdf csv html generar sensor rango fechas descargar">
           <div class="view-head"><div><span class="section-kicker">Informes</span><h1>Generador de informes</h1><p class="muted">Filtra por ID de sensor y rango de fechas. No usa campos de lote.</p></div><div class="view-actions"><button class="btn btn-outline" id="previewReportBtn">Vista previa</button><button class="btn btn-primary" id="generateReportBtn">Generar informe</button></div></div>
           <div class="reports-grid">
@@ -291,6 +399,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

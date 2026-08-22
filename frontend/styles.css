@@ -872,3 +872,171 @@ input:focus, select:focus { border-color: rgba(31,209,154,.45); box-shadow: 0 0 
   .searchbar { height: 44px; padding: 0 10px; }
   .kpi-card strong { font-size: 1.45rem; }
 }
+
+
+/* =========================
+   Logs ESP32
+   ========================= */
+.logs-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.log-metric strong {
+  font-size: clamp(1.8rem, 3vw, 2.7rem);
+}
+.logs-toolbar {
+  margin-bottom: 16px;
+}
+.logs-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(150px, .8fr) minmax(140px, .65fr) minmax(260px, 1.5fr) minmax(110px, .5fr);
+  gap: 12px;
+  align-items: end;
+}
+.logs-filter-grid label {
+  color: var(--muted);
+  display: grid;
+  gap: 7px;
+  font-size: .78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.logs-filter-grid input,
+.logs-filter-grid select {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 12px 13px;
+  outline: none;
+}
+.logs-toolbar-foot {
+  margin-top: 13px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.logs-panel {
+  overflow: hidden;
+}
+.logs-help {
+  margin: 5px 0 0;
+  font-size: .86rem;
+}
+.logs-table-wrap {
+  width: 100%;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+.logs-table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+  font-size: .84rem;
+}
+.logs-table th,
+.logs-table td {
+  padding: 12px 13px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  text-align: left;
+}
+.logs-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
+  color: var(--muted);
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+.logs-table tbody tr:hover {
+  background: rgba(31,209,154,.055);
+}
+.log-sensor {
+  display: inline-flex;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  font-weight: 800;
+}
+.log-level {
+  display: inline-flex;
+  min-width: 62px;
+  justify-content: center;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: .68rem;
+  font-weight: 900;
+  letter-spacing: .04em;
+}
+.log-level.trace,
+.log-level.debug { color: var(--muted); }
+.log-level.info { color: var(--success); background: rgba(68,214,124,.09); border-color: rgba(68,214,124,.18); }
+.log-level.warn { color: var(--warning); background: rgba(255,200,87,.09); border-color: rgba(255,200,87,.18); }
+.log-level.error,
+.log-level.fatal { color: var(--danger); background: rgba(255,107,107,.09); border-color: rgba(255,107,107,.2); }
+.log-message {
+  max-width: 370px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+.log-topic {
+  color: var(--blue);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .78rem;
+}
+.log-payload {
+  max-width: 360px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.log-payload-details {
+  margin-top: 5px;
+}
+.log-payload-details summary {
+  color: var(--gold-2);
+  cursor: pointer;
+  font-weight: 750;
+}
+.log-payload-details pre {
+  white-space: pre-wrap;
+  max-width: 520px;
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.16);
+  overflow: auto;
+  font-size: .75rem;
+}
+.danger-chip {
+  color: var(--danger) !important;
+  background: rgba(255,107,107,.08) !important;
+  border-color: rgba(255,107,107,.18) !important;
+}
+.logs-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 18px 0 6px;
+}
+@media (max-width: 980px) {
+  .logs-status-grid { grid-template-columns: repeat(2, 1fr); }
+  .logs-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .logs-status-grid { grid-template-columns: 1fr; }
+  .logs-filter-grid { grid-template-columns: 1fr; }
+  .logs-toolbar-foot { align-items: flex-start; flex-direction: column; }
+}
