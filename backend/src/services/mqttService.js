@@ -1,8 +1,11 @@
 const mqtt = require("mqtt");
 const SensorData = require("../models/SensorData");
 const { saveEspLog, setIO: setLogIO } = require("./logService");
+const {
+  setIO: setOtaIO,
+  applyOtaStatus
+} = require("./otaService");
 
-// Broker MQTT desde .env o valor por defecto
 const MQTT_BROKER = process.env.MQTT_BROKER || "mqtt://broker.hivemq.com:1883";
 
 console.log("Conectando a MQTT:", MQTT_BROKER);
@@ -13,15 +16,14 @@ const client = mqtt.connect(MQTT_BROKER, {
   clean: true
 });
 
-// Socket.IO
 let io = null;
 
 const setIO = (ioInstance) => {
   io = ioInstance;
   setLogIO(ioInstance);
+  setOtaIO(ioInstance);
 };
 
-// NPK obligatorio
 const toRequiredNumber = (value) => {
   if (value === null || value === undefined || value === "") {
     return null;
@@ -31,7 +33,6 @@ const toRequiredNumber = (value) => {
   return Number.isNaN(number) ? null : number;
 };
 
-// Humedad y temperatura opcionales
 const toOptionalNumber = (value) => {
   if (value === null || value === undefined || value === "") {
     return null;
@@ -56,6 +57,14 @@ const isLogTopic = (topic) => {
   return ["log", "logs"].includes(parts[2].toLowerCase());
 };
 
+const isOtaStatusTopic = (topic) => {
+  return /^npk\/[^/]+\/ota\/status$/.test(topic);
+};
+
+const isSensorDataTopic = (topic, sensorId) => {
+  return topic === `npk/${sensorId}/data`;
+};
+
 const parseSensorData = (rawPayload) => {
   try {
     return JSON.parse(rawPayload);
@@ -64,36 +73,93 @@ const parseSensorData = (rawPayload) => {
   }
 };
 
+const parseJsonObject = (rawPayload) => {
+  try {
+    const data = JSON.parse(rawPayload);
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      throw new Error("El payload JSON debe ser un objeto.");
+    }
+    return data;
+  } catch (error) {
+    throw new Error(`Payload JSON inválido: ${error.message}`);
+  }
+};
+
+const publishAsync = (topic, payload, options = {}) => {
+  return new Promise((resolve, reject) => {
+    if (!client.connected) {
+      const error = new Error("MQTT desconectado.");
+      error.code = "MQTT_DISCONNECTED";
+      reject(error);
+      return;
+    }
+
+    client.publish(topic, payload, options, (error) => {
+      if (error) {
+        const publishError = new Error(`Falló publish MQTT en ${topic}: ${error.message}`);
+        publishError.code = "MQTT_PUBLISH_FAILED";
+        publishError.cause = error;
+        reject(publishError);
+        return;
+      }
+
+      resolve({ topic, payload });
+    });
+  });
+};
+
 client.on("connect", () => {
   console.log("MQTT conectado");
 
-  // Datos NPK
-  client.subscribe("npk/+/data", { qos: 1 }, (err) => {
-    if (err) {
-      console.error("Error al suscribirse a datos:", err.message);
-      return;
+  client.subscribe(
+    [
+      "npk/+/data",
+      "npk/+/logs",
+      "npk/+/log",
+      "npk/+/status",
+      "npk/+/ota/status"
+    ],
+    { qos: 1 },
+    (err) => {
+      if (err) {
+        console.error("Error al suscribirse a topics NPK:", err.message);
+        return;
+      }
+
+      console.log("Suscrito a: npk/+/data, npk/+/logs, npk/+/log, npk/+/status, npk/+/ota/status");
     }
-
-    console.log("Suscrito a: npk/+/data");
-  });
-
-  // Logs del ESP32. Se contemplan ambas variantes: /log y /logs.
-  client.subscribe(["npk/+/log", "npk/+/logs"], { qos: 1 }, (err) => {
-    if (err) {
-      console.error("Error al suscribirse a logs:", err.message);
-      return;
-    }
-
-    console.log("Suscrito a: npk/+/log y npk/+/logs");
-  });
+  );
 });
 
 client.on("message", async (topic, message) => {
   const rawPayload = message.toString();
   const sensorId = getSensorIdFromTopic(topic);
 
-  // IMPORTANTE: los logs se procesan primero y nunca se descartan por
-  // tener JSON inválido, campos faltantes o formato inesperado.
+  if (isOtaStatusTopic(topic)) {
+    try {
+      const payload = parseJsonObject(rawPayload);
+      const result = await applyOtaStatus({
+        sensorId,
+        payload,
+        topic
+      });
+
+      if (!result.matched) {
+        console.warn("Estado OTA recibido sin trabajo asociado:", {
+          sensorId,
+          status: result.error?.status,
+          topic
+        });
+      }
+    } catch (error) {
+      console.error("Error procesando estado OTA:", error.message);
+      console.error("Topic OTA:", topic);
+      console.error("Payload OTA:", rawPayload);
+    }
+
+    return;
+  }
+
   if (isLogTopic(topic)) {
     try {
       const savedLog = await saveEspLog({
@@ -104,9 +170,6 @@ client.on("message", async (topic, message) => {
 
       console.log("Log ESP32 guardado:", savedLog.id);
     } catch (error) {
-      // Si MongoDB falla, conservamos el mensaje en consola para que no
-      // desaparezca del proceso. No se intenta interpretar el log como
-      // lectura de sensor.
       console.error("Error guardando log ESP32:", error.message);
       console.error("Topic del log:", topic);
       console.error("Payload del log:", rawPayload);
@@ -115,7 +178,26 @@ client.on("message", async (topic, message) => {
     return;
   }
 
-  if (topic !== `npk/${sensorId}/data`) {
+  if (topic.endsWith("/status")) {
+    console.log("Status MQTT recibido:", {
+      topic,
+      sensorId,
+      payload: rawPayload
+    });
+
+    if (io) {
+      io.emit("device-status", {
+        sensor_id: sensorId,
+        topic,
+        payload: rawPayload,
+        timestamp: new Date()
+      });
+    }
+
+    return;
+  }
+
+  if (!isSensorDataTopic(topic, sensorId)) {
     return;
   }
 
@@ -149,7 +231,6 @@ client.on("message", async (topic, message) => {
       data.temp
     );
 
-    // Solo NPK es obligatorio
     if (
       nitrogeno === null ||
       fosforo === null ||
@@ -174,7 +255,6 @@ client.on("message", async (topic, message) => {
       temperatura_ambiente
     });
 
-    // Guardar en MongoDB
     const saved = await SensorData.create({
       sensor_id: sensorId,
       nitrogeno,
@@ -187,7 +267,6 @@ client.on("message", async (topic, message) => {
 
     console.log("Guardado en MongoDB:", saved._id);
 
-    // Enviar al frontend en tiempo real
     if (io) {
       io.emit("npk-data", {
         sensor_id: saved.sensor_id,
@@ -219,7 +298,8 @@ client.on("close", () => {
 module.exports = {
   client,
   setIO,
-
+  isConnected: () => client.connected,
+  publishAsync,
   publish: (topic, payload, options, callback) => {
     return client.publish(topic, payload, options, callback);
   }

@@ -37,6 +37,12 @@ const extractLogFields = (parsedPayload) => {
     parsedPayload.text ??
     "";
 
+  const serialLine =
+    parsedPayload.serial_line ??
+    parsedPayload.serialLine ??
+    message ??
+    "";
+
   const deviceTimestampCandidate =
     parsedPayload.timestamp ??
     parsedPayload.time ??
@@ -52,6 +58,7 @@ const extractLogFields = (parsedPayload) => {
       parsedPayload.type
     ),
     message: typeof message === "string" ? message : JSON.stringify(message),
+    serial_line: typeof serialLine === "string" ? serialLine : JSON.stringify(serialLine),
     device_timestamp: isValidDate(deviceTimestampCandidate)
       ? new Date(deviceTimestampCandidate)
       : null
@@ -76,6 +83,7 @@ const saveEspLog = async ({ topic, rawPayload, sensorId }) => {
     topic,
     level: fields.level,
     message: fields.message,
+    serial_line: fields.serial_line,
     raw_payload: rawPayload,
     payload: jsonParsed ? parsedPayload : null,
     device_timestamp: fields.device_timestamp || null,
@@ -90,6 +98,7 @@ const saveEspLog = async ({ topic, rawPayload, sensorId }) => {
     message: log.message,
     raw_payload: log.raw_payload,
     payload: log.payload,
+    serial_line: log.serial_line || log.message || log.raw_payload || "",
     device_timestamp: log.device_timestamp,
     received_at: log.received_at
   };

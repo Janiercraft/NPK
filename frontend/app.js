@@ -9,7 +9,7 @@ const CHIGORODO = {
 };
 
 const API_CONFIG = {
-  baseUrl: 'https://npk-yvtg.onrender.com',
+  baseUrl: 'http://localhost:3000',
 
   // Primero se consultan las rutas reales del backend actual.
   // /api/sensor/all debe devolver todos los sensores de MongoDB.
@@ -34,6 +34,10 @@ const API_CONFIG = {
   streamEndpoint: '/api/sensor/stream',
   logsEndpoint: '/api/logs',
   latestLogsEndpoint: '/api/logs/latest',
+  otaManifestEndpoint: '/api/ota/manifest',
+  otaRequestEndpoint: sensorId => `/api/device/${encodeURIComponent(sensorId)}/ota`,
+  otaStatusEndpoint: sensorId => `/api/device/${encodeURIComponent(sensorId)}/ota/status`,
+  otaHistoryEndpoint: sensorId => `/api/device/${encodeURIComponent(sensorId)}/ota/history`,
   pollIntervalMs: 10000,
   timeoutMs: 7000
 };
@@ -84,6 +88,10 @@ let logsPollingTimer = null;
 let espLogs = [];
 let logsPaused = false;
 let logsLoadedLimit = 250;
+let otaSocket = null;
+let otaSelectedSensorId = '';
+let otaManifest = null;
+let otaCurrentJob = null;
 
 function init() {
   setTimeout(() => $('#loadingScreen')?.classList.add('done'), 500);
@@ -100,6 +108,7 @@ function init() {
   startPolling();
   startRealtimeStream();
   initLogsRealtime();
+  initOtaRealtime();
   loadLogsFromBackend({ silent: true });
   toast('Frontend listo', 'La página consultará el backend y mostrará sensores y logs ESP32 en tiempo real.');
 }
@@ -259,6 +268,12 @@ function setView(viewName = 'dashboard') {
   if (breadcrumb) breadcrumb.textContent = `Inicio / ${title}`;
   if (normalized === 'mapa') setTimeout(() => sensorMap?.invalidateSize?.(), 350);
   if (normalized === 'meteorologia') setTimeout(() => weatherMap?.invalidateSize?.(), 350);
+  if (normalized === 'ota') {
+    setTimeout(() => {
+      if (!otaSelectedSensorId) selectOtaSensor($('#otaSensorId')?.value || getAllSensors()[0]?.id || '');
+      else refreshOtaSelectedSensor({ silent: true });
+    }, 50);
+  }
   if (['dashboard', 'meteorologia', 'estadisticas'].includes(normalized)) setTimeout(drawAllCharts, 80);
 }
 
@@ -292,6 +307,12 @@ function initInteractions() {
   });
   $('#homeRefreshBtn')?.addEventListener('click', () => loadSensorsFromBackend());
   $('#refreshWeatherBtn')?.addEventListener('click', () => loadWeather());
+  $('#otaSensorId')?.addEventListener('change', () => selectOtaSensor($('#otaSensorId')?.value || ''));
+  $('#otaRequestBtn')?.addEventListener('click', requestOtaFromFrontend);
+  $('#otaRefreshBtn')?.addEventListener('click', () => refreshOtaSelectedSensor({ silent: false }));
+  $('#otaLoadManifestBtn')?.addEventListener('click', loadOtaManifest);
+  $('#otaUseManifestBtn')?.addEventListener('click', useOtaManifest);
+  $('#otaSha256')?.addEventListener('input', event => { event.target.value = event.target.value.replace(/[^0-9a-f]/gi, '').slice(0, 64); });
   $('#refreshAnalyticsBtn')?.addEventListener('click', () => { loadSensorsFromBackend(); drawAllCharts(); });
   $('#exportSensorsBtn')?.addEventListener('click', exportSensorsCSV);
   $('#addSensorBtn')?.addEventListener('click', openAddSensorModal);
@@ -403,6 +424,7 @@ function normalizeEspLog(raw) {
     sensor_id: raw.sensor_id ?? raw.sensorId ?? '—',
     level,
     message: raw.message ?? raw.msg ?? raw.log ?? '',
+    serial_line: raw.serial_line ?? raw.serialLine ?? '',
     topic: raw.topic ?? '—',
     raw_payload: raw.raw_payload ?? (raw.payload !== undefined ? safeJsonStringify(raw.payload) : ''),
     payload: raw.payload ?? null,
@@ -487,23 +509,20 @@ function renderLogs() {
   setText('#logsSensorCount', String(sensorCount));
 
   if (!filtered.length) {
-    body.innerHTML = `<tr><td colspan="6" class="table-empty">${espLogs.length ? 'No hay logs que coincidan con los filtros.' : 'No hay logs cargados todavía.'}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="5" class="table-empty">${espLogs.length ? 'No hay logs que coincidan con los filtros.' : 'No hay logs cargados todavía.'}</td></tr>`;
     return;
   }
 
   body.innerHTML = filtered.map(log => {
     const safeLevel = ['TRACE','DEBUG','INFO','WARN','WARNING','ERROR','FATAL'].includes(log.level) ? log.level : 'INFO';
     const levelClass = safeLevel.toLowerCase().replace('warning', 'warn');
-    const raw = String(log.raw_payload ?? '');
-    const preview = raw.length > 140 ? `${raw.slice(0, 140)}…` : raw;
-    const rawBlock = raw.length > 140 ? `<details class="log-payload-details"><summary>Ver completo</summary><pre>${escapeHtml(raw)}</pre></details>` : escapeHtml(raw || '—');
+    const serialLine = String(log.serial_line || log.message || log.raw_payload || '—');
     return `<tr class="log-row log-${levelClass}">
       <td><time datetime="${escapeHtml(log.received_at)}">${escapeHtml(formatDateTime(log.received_at))}</time></td>
       <td><span class="log-sensor">${escapeHtml(String(log.sensor_id ?? '—'))}</span></td>
       <td><span class="log-level ${escapeHtml(levelClass)}">${escapeHtml(safeLevel)}</span></td>
-      <td class="log-message">${escapeHtml(String(log.message || preview || '—'))}</td>
+      <td class="log-serial-line"><code>${escapeHtml(serialLine)}</code></td>
       <td><code class="log-topic">${escapeHtml(String(log.topic || '—'))}</code></td>
-      <td class="log-payload">${raw.length > 140 ? `${escapeHtml(preview)}<br>${rawBlock}` : rawBlock}</td>
     </tr>`;
   }).join('');
 }
@@ -951,6 +970,11 @@ function renderSelections() {
   const sensors = getAllSensors();
   fillSelect('#dashboardSensorSelect', sensors.map(s => [s.id, `${s.id}${s.name ? ' · ' + s.name : ''}`]), 'Seleccionar sensor');
   fillSelect('#reportSensorId', [['todos', 'Todos'], ...sensors.map(s => [s.id, `${s.id}${s.name ? ' · ' + s.name : ''}`])]);
+  fillSelect('#otaSensorId', sensors.map(s => [s.id, `${s.id}${s.name ? ' · ' + s.name : ''}`]), 'Seleccionar sensor');
+  if (otaSelectedSensorId && sensors.some(s => s.id === otaSelectedSensorId)) {
+    const otaSelect = $('#otaSensorId');
+    if (otaSelect) otaSelect.value = otaSelectedSensorId;
+  }
 }
 
 function fillSelect(selector, options, placeholder) {
@@ -992,10 +1016,318 @@ function renderSensorsTable() {
       <td>${dash(sensor.soilHumidity ?? sensor.humidity)}${(sensor.soilHumidity ?? sensor.humidity) != null ? '%' : ''}</td>
       <td>${dash(sensor.airTemp ?? sensor.temp)}${(sensor.airTemp ?? sensor.temp) != null ? '°C' : ''}</td>
       <td>${sensor.timestamp ? formatDateTime(sensor.timestamp) : 'Sin lectura'}</td>
-      <td class="action-stack"><button class="btn btn-small btn-outline" onclick="window.openSensorHistory('${escapeAttr(sensor.id)}')">Ver</button><button class="btn btn-small btn-secondary" onclick="window.syncSensorById('${escapeAttr(sensor.id)}')">Sincronizar</button><button class="btn btn-small btn-outline" onclick="window.exportOneSensor('${escapeAttr(sensor.id)}')">CSV</button><button class="btn btn-small btn-outline" onclick="window.openUpdateSensorModal('${escapeAttr(sensor.id)}')">Actualizar ID</button><button class="btn btn-small btn-primary" onclick="window.confirmHideSensor('${escapeAttr(sensor.id)}')">Eliminar</button></td>
+      <td class="action-stack"><button class="btn btn-small btn-outline" onclick="window.openSensorHistory('${escapeAttr(sensor.id)}')">Ver</button><button class="btn btn-small btn-secondary" onclick="window.openSensorOta('${escapeAttr(sensor.id)}')">OTA</button><button class="btn btn-small btn-secondary" onclick="window.syncSensorById('${escapeAttr(sensor.id)}')">Sincronizar</button><button class="btn btn-small btn-outline" onclick="window.exportOneSensor('${escapeAttr(sensor.id)}')">CSV</button><button class="btn btn-small btn-outline" onclick="window.openUpdateSensorModal('${escapeAttr(sensor.id)}')">Actualizar ID</button><button class="btn btn-small btn-primary" onclick="window.confirmHideSensor('${escapeAttr(sensor.id)}')">Eliminar</button></td>
     </tr>
   `).join('');
 }
+
+
+function formatOtaStatus(status) {
+  const normalized = String(status || '').toUpperCase();
+  const labels = {
+    REQUESTED: 'Solicitado',
+    MQTT_SENT: 'Enviado por MQTT',
+    OTA_START: 'Iniciando OTA',
+    START: 'Iniciando OTA',
+    OTA_DOWNLOADING: 'Descargando',
+    DOWNLOADING: 'Descargando',
+    OTA_VERIFYING: 'Verificando',
+    VERIFYING: 'Verificando',
+    OTA_INSTALLING: 'Instalando',
+    INSTALLING: 'Instalando',
+    OTA_READY_REBOOT: 'Listo para reiniciar',
+    OTA_REBOOTING: 'Reiniciando',
+    OTA_SUCCESS: 'Actualización exitosa',
+    SUCCESS: 'Actualización exitosa',
+    OTA_ROLLBACK: 'Rollback en curso',
+    OTA_ROLLBACK_SUCCESS: 'Rollback completado',
+    OTA_ERROR: 'Error OTA',
+    ERROR: 'Error',
+    FAILED: 'Falló',
+    REJECTED: 'Rechazado',
+    OTA_REJECTED: 'OTA rechazada',
+    MQTT_ERROR: 'Error MQTT',
+    MQTT_PUBLISH_FAILED: 'Falló publicación MQTT',
+    UNKNOWN: 'Desconocido'
+  };
+  return labels[normalized] || normalized || 'Sin estado';
+}
+
+function otaStatusClass(status) {
+  const value = String(status || '').toUpperCase();
+  if (['OTA_SUCCESS', 'SUCCESS', 'OTA_ROLLBACK_SUCCESS'].includes(value)) return 'success';
+  if (value.includes('ERROR') || ['FAILED', 'REJECTED', 'OTA_REJECTED'].includes(value)) return 'danger-chip';
+  if (['OTA_DOWNLOADING', 'DOWNLOADING', 'OTA_VERIFYING', 'VERIFYING', 'OTA_INSTALLING', 'INSTALLING', 'OTA_START', 'START', 'OTA_REBOOTING', 'OTA_READY_REBOOT', 'OTA_ROLLBACK', 'REQUESTED', 'MQTT_SENT'].includes(value)) return 'warning';
+  return '';
+}
+
+function setOtaStatusChip(status, fallback = 'Sin selección') {
+  const chip = $('#otaStatusChip');
+  if (!chip) return;
+  const text = status ? formatOtaStatus(status) : fallback;
+  chip.textContent = text;
+  chip.className = `chip ${otaStatusClass(status)}`.trim();
+}
+
+function renderOtaJob(job) {
+  otaCurrentJob = job || null;
+  const empty = $('#otaStatusEmpty');
+  const content = $('#otaStatusContent');
+  if (!job) {
+    empty?.classList.remove('hidden');
+    content?.classList.add('hidden');
+    setOtaStatusChip('', otaSelectedSensorId ? 'Sin trabajos OTA' : 'Sin selección');
+    return;
+  }
+
+  empty?.classList.add('hidden');
+  content?.classList.remove('hidden');
+  const progress = Math.max(0, Math.min(100, Number(job.progress) || 0));
+  setText('#otaJobId', job.job_id || '--');
+  setText('#otaJobVersion', job.version || '--');
+  setText('#otaProgressValue', `${progress}%`);
+  setText('#otaProgressMessage', job.message || 'Sin mensaje');
+  setText('#otaJobStatus', formatOtaStatus(job.status));
+  setText('#otaJobCreated', job.created_at ? formatDateTime(job.created_at) : '--');
+  setText('#otaJobStarted', job.started_at ? formatDateTime(job.started_at) : '--');
+  setText('#otaJobCompleted', job.completed_at ? formatDateTime(job.completed_at) : '--');
+  setText('#otaJobError', job.error || '--');
+  setText('#otaJobTopic', job.mqtt_topic || `npk/${otaSelectedSensorId}/cmd`);
+  const bar = $('#otaProgressBar');
+  if (bar) bar.style.width = `${progress}%`;
+  setOtaStatusChip(job.status, 'Sin estado');
+}
+
+function renderOtaHistory(jobs = []) {
+  const body = $('#otaHistoryBody');
+  const meta = $('#otaHistoryMeta');
+  if (!body) return;
+  if (!otaSelectedSensorId) {
+    body.innerHTML = '<tr><td colspan="6" class="table-empty">No hay sensor seleccionado.</td></tr>';
+    if (meta) meta.textContent = 'Selecciona un sensor';
+    return;
+  }
+  if (!jobs.length) {
+    body.innerHTML = '<tr><td colspan="6" class="table-empty">No existen trabajos OTA para este sensor.</td></tr>';
+    if (meta) meta.textContent = `${otaSelectedSensorId} · sin historial`;
+    return;
+  }
+  if (meta) meta.textContent = `${otaSelectedSensorId} · ${jobs.length} trabajo(s)`;
+  body.innerHTML = jobs.map(job => `
+    <tr>
+      <td>${job.created_at ? formatDateTime(job.created_at) : '--'}</td>
+      <td><strong>${escapeHtml(job.version || '--')}</strong></td>
+      <td><span class="chip ${otaStatusClass(job.status)}">${escapeHtml(formatOtaStatus(job.status))}</span></td>
+      <td>${Math.max(0, Math.min(100, Number(job.progress) || 0))}%</td>
+      <td>${escapeHtml(job.error || job.message || '--')}</td>
+      <td><code>${escapeHtml(job.job_id || '--')}</code></td>
+    </tr>
+  `).join('');
+}
+
+async function fetchOtaStatus(sensorId, { silent = true } = {}) {
+  if (!sensorId) return null;
+  try {
+    const response = await fetchWithTimeout(buildUrl(API_CONFIG.otaStatusEndpoint(sensorId)), { headers: { Accept: 'application/json' } }, API_CONFIG.timeoutMs);
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : null;
+    if (!response.ok) {
+      if (response.status === 404) return null;
+      throw new Error(data?.message || `HTTP ${response.status}`);
+    }
+    renderOtaJob(data?.job || null);
+    return data?.job || null;
+  } catch (error) {
+    renderOtaJob(null);
+    if (!silent) toast('Estado OTA', error.message || 'No se pudo consultar el estado OTA.');
+    return null;
+  }
+}
+
+async function fetchOtaHistory(sensorId, { silent = true } = {}) {
+  if (!sensorId) return [];
+  try {
+    const response = await fetchWithTimeout(buildUrl(API_CONFIG.otaHistoryEndpoint(sensorId)), { headers: { Accept: 'application/json' } }, API_CONFIG.timeoutMs);
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : null;
+    if (!response.ok) throw new Error(data?.message || `HTTP ${response.status}`);
+    const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
+    renderOtaHistory(jobs);
+    return jobs;
+  } catch (error) {
+    renderOtaHistory([]);
+    if (!silent) toast('Historial OTA', error.message || 'No se pudo consultar el historial OTA.');
+    return [];
+  }
+}
+
+async function refreshOtaSelectedSensor({ silent = true } = {}) {
+  if (!otaSelectedSensorId) return;
+  await Promise.all([
+    fetchOtaStatus(otaSelectedSensorId, { silent }),
+    fetchOtaHistory(otaSelectedSensorId, { silent })
+  ]);
+}
+
+function selectOtaSensor(sensorId = '') {
+  otaSelectedSensorId = String(sensorId || '').trim();
+  const select = $('#otaSensorId');
+  if (select && otaSelectedSensorId && [...select.options].some(option => option.value === otaSelectedSensorId)) select.value = otaSelectedSensorId;
+  if (!otaSelectedSensorId) {
+    renderOtaJob(null);
+    renderOtaHistory([]);
+    return;
+  }
+  refreshOtaSelectedSensor({ silent: false });
+}
+
+async function loadOtaManifest({ silent = false } = {}) {
+  try {
+    const response = await fetchWithTimeout(buildUrl(API_CONFIG.otaManifestEndpoint), { headers: { Accept: 'application/json' } }, API_CONFIG.timeoutMs);
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : null;
+    if (!response.ok) throw new Error(data?.message || `HTTP ${response.status}`);
+    otaManifest = data;
+    if (!silent) toast('Manifest cargado', `Versión ${data.version || '--'} disponible.`);
+    return data;
+  } catch (error) {
+    otaManifest = null;
+    if (!silent) toast('Manifest OTA', error.message || 'No se pudo cargar el manifest.');
+    return null;
+  }
+}
+
+function useOtaManifest() {
+  const apply = manifest => {
+    if (!manifest) return;
+    setValue('#otaVersion', manifest.version || '');
+    setValue('#otaUrl', manifest.url || '');
+    setValue('#otaSha256', manifest.sha256 || '');
+    setValue('#otaSize', manifest.size ?? '');
+  };
+  if (otaManifest) {
+    apply(otaManifest);
+    toast('Manifest aplicado', `Versión ${otaManifest.version || '--'} cargada en el formulario.`);
+    return;
+  }
+  loadOtaManifest({ silent: true }).then(manifest => {
+    if (!manifest) return;
+    apply(manifest);
+    toast('Manifest aplicado', `Versión ${manifest.version || '--'} cargada en el formulario.`);
+  });
+}
+
+function getOtaFormData() {
+  return {
+    version: $('#otaVersion')?.value.trim() || '',
+    url: $('#otaUrl')?.value.trim() || '',
+    sha256: $('#otaSha256')?.value.trim().toLowerCase() || '',
+    size: $('#otaSize')?.value.trim() || ''
+  };
+}
+
+function validateOtaForm({ sensorId, version, url, sha256, size }) {
+  if (!sensorId) return 'Selecciona un sensor ESP32.';
+  if (!/^(?:v)?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) return 'La versión debe tener formato 1.1.0 o v1.1.0.';
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' || !parsed.hostname) return 'La URL del firmware debe ser HTTPS y válida.';
+  } catch {
+    return 'La URL del firmware no es válida.';
+  }
+  if (!/^[0-9a-f]{64}$/i.test(sha256)) return 'El SHA-256 debe tener exactamente 64 caracteres hexadecimales.';
+  if (size !== '' && (!Number.isFinite(Number(size)) || Number(size) < 0)) return 'El tamaño debe ser un número mayor o igual a 0.';
+  return '';
+}
+
+async function requestOtaFromFrontend() {
+  const sensorId = otaSelectedSensorId || $('#otaSensorId')?.value.trim() || '';
+  const form = getOtaFormData();
+  const validation = validateOtaForm({ sensorId, ...form });
+  if (validation) return toast('Datos OTA inválidos', validation);
+
+  const button = $('#otaRequestBtn');
+  if (button) {
+    button.disabled = true;
+    button.dataset.originalText = button.textContent;
+    button.textContent = 'Enviando...';
+  }
+
+  try {
+    const body = {
+      version: form.version,
+      url: form.url,
+      sha256: form.sha256
+    };
+    if (form.size !== '') body.size = Number(form.size);
+
+    const response = await fetchWithTimeout(buildUrl(API_CONFIG.otaRequestEndpoint(sensorId)), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body)
+    }, API_CONFIG.timeoutMs);
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : null;
+    if (!response.ok) throw new Error(data?.message || `HTTP ${response.status}`);
+
+    otaSelectedSensorId = sensorId;
+    if ($('#otaSensorId')) $('#otaSensorId').value = sensorId;
+    renderOtaJob(data?.job || null);
+    await fetchOtaHistory(sensorId, { silent: true });
+    toast(data?.duplicate ? 'OTA ya solicitada' : 'OTA enviada', data?.message || `La orden OTA fue enviada a ${sensorId}.`);
+  } catch (error) {
+    toast('Error al solicitar OTA', error.message || 'No se pudo enviar la orden OTA.');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = button.dataset.originalText || 'Solicitar OTA';
+    }
+  }
+}
+
+async function initOtaRealtime() {
+  if (!window.io) {
+    setText('#otaRealtimeChip', 'Socket.IO no disponible');
+    return;
+  }
+  try {
+    otaSocket?.disconnect();
+    otaSocket = logSocket || io(API_CONFIG.baseUrl, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1500,
+      timeout: 7000
+    });
+    otaSocket.on('connect', () => setText('#otaRealtimeChip', 'Socket.IO conectado'));
+    otaSocket.on('disconnect', () => setText('#otaRealtimeChip', 'Socket.IO desconectado'));
+    otaSocket.on('connect_error', () => setText('#otaRealtimeChip', 'Socket.IO con error'));
+    otaSocket.on('ota:status', event => {
+      if (!event || !otaSelectedSensorId || String(event.sensor_id || '') !== String(otaSelectedSensorId)) return;
+      const job = event.job_id ? { ...(otaCurrentJob || {}), ...event } : { ...(otaCurrentJob || {}), ...event };
+      renderOtaJob(job);
+      fetchOtaHistory(otaSelectedSensorId, { silent: true });
+      const status = String(event.status || '').toUpperCase();
+      if (['OTA_SUCCESS', 'SUCCESS'].includes(status)) toast('OTA completada', `${otaSelectedSensorId} terminó la actualización correctamente.`);
+      if (status === 'OTA_ROLLBACK') toast('Rollback OTA', event.message || `El dispositivo ${otaSelectedSensorId} está restaurando el firmware anterior.`);
+      if (status === 'OTA_ROLLBACK_SUCCESS') toast('Rollback completado', event.message || `El dispositivo ${otaSelectedSensorId} volvió al firmware anterior.`);
+      if (status.includes('ERROR') || ['FAILED', 'REJECTED', 'OTA_REJECTED'].includes(status)) toast('OTA con error', event.error || event.message || `El dispositivo ${otaSelectedSensorId} reportó un fallo.`);
+    });
+  } catch (error) {
+    console.error('No fue posible iniciar el realtime OTA:', error);
+    setText('#otaRealtimeChip', 'Socket.IO con error');
+  }
+}
+
+window.openSensorOta = function(id) {
+  const sensorId = String(id || '').trim();
+  if (!sensorId) return;
+  setView('ota');
+  otaSelectedSensorId = sensorId;
+  const select = $('#otaSensorId');
+  if (select) select.value = sensorId;
+  refreshOtaSelectedSensor({ silent: false });
+};
 
 function generateAlerts(sourceRows = getAllSensors()) {
   const alerts = [];
@@ -2163,6 +2495,11 @@ function toNumberOrNull(value) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(String(value).replace(',', '.'));
   return Number.isFinite(number) ? number : null;
+}
+
+function setValue(selector, value) {
+  const element = $(selector);
+  if (element) element.value = value == null ? '' : String(value);
 }
 
 function setText(selector, value) {

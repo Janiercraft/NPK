@@ -938,7 +938,7 @@ input:focus, select:focus { border-color: rgba(31,209,154,.45); box-shadow: 0 0 
 }
 .logs-table {
   width: 100%;
-  min-width: 1120px;
+  min-width: 1040px;
   border-collapse: collapse;
   font-size: .84rem;
 }
@@ -987,11 +987,23 @@ input:focus, select:focus { border-color: rgba(31,209,154,.45); box-shadow: 0 0 
 .log-level.warn { color: var(--warning); background: rgba(255,200,87,.09); border-color: rgba(255,200,87,.18); }
 .log-level.error,
 .log-level.fatal { color: var(--danger); background: rgba(255,107,107,.09); border-color: rgba(255,107,107,.2); }
-.log-message {
-  max-width: 370px;
+.log-serial-line {
+  min-width: 620px;
+  max-width: 980px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--text);
+}
+.log-serial-line code {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: .82rem;
+  line-height: 1.55;
+  color: var(--text);
+  background: rgba(0,0,0,.16);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 11px;
 }
 .log-topic {
   color: var(--blue);
@@ -1039,4 +1051,34 @@ input:focus, select:focus { border-color: rgba(31,209,154,.45); box-shadow: 0 0 
   .logs-status-grid { grid-template-columns: 1fr; }
   .logs-filter-grid { grid-template-columns: 1fr; }
   .logs-toolbar-foot { align-items: flex-start; flex-direction: column; }
+}
+
+/* === OTA remoto === */
+.ota-layout { display:grid; grid-template-columns:minmax(0, 1.15fr) minmax(340px, .85fr); gap:18px; margin-bottom:18px; }
+.ota-command-panel, .ota-status-panel, .ota-history-panel { min-width:0; }
+.ota-form-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+.ota-full-field { grid-column:1 / -1; }
+.ota-actions-row { display:flex; justify-content:flex-end; gap:10px; margin-top:16px; flex-wrap:wrap; }
+.ota-note { margin:12px 0 0; font-size:.82rem; }
+.ota-empty-state { padding:24px 12px; color:var(--muted); text-align:center; border:1px dashed var(--border); border-radius:16px; }
+.ota-job-head { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:8px 0 16px; }
+.ota-job-head > div { display:grid; gap:5px; min-width:0; }
+.ota-job-head strong { overflow-wrap:anywhere; }
+.ota-progress-track { width:100%; height:14px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.08); border:1px solid var(--border); }
+.ota-progress-track span { display:block; width:0; height:100%; border-radius:inherit; background:linear-gradient(90deg, var(--primary), var(--blue)); transition:width .35s ease; }
+.ota-progress-meta { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-top:8px; }
+.ota-progress-meta span { color:var(--muted); text-align:right; overflow-wrap:anywhere; }
+.ota-details { margin-top:16px; }
+.ota-history-table { min-width:860px; }
+.ota-history-table code { font-size:.76rem; word-break:break-all; }
+.ota-command-panel code { color:var(--primary); }
+@media (max-width: 980px) {
+  .ota-layout { grid-template-columns:1fr; }
+}
+@media (max-width: 640px) {
+  .ota-form-grid { grid-template-columns:1fr; }
+  .ota-full-field { grid-column:auto; }
+  .ota-job-head { grid-template-columns:1fr; }
+  .ota-progress-meta { flex-direction:column; }
+  .ota-progress-meta span { text-align:left; }
 }

@@ -130,6 +130,7 @@
         <button class="side-item" data-view="estadisticas"><span>📈</span><b>Analíticas</b></button>
         <button class="side-item" data-view="alertas"><span>🚨</span><b>Alertas</b></button>
         <button class="side-item" data-view="logs"><span>🧾</span><b>Logs ESP32</b></button>
+        <button class="side-item" data-view="ota"><span>⬆️</span><b>OTA Remoto</b></button>
         <button class="side-item" data-view="reportes"><span>📄</span><b>Informes</b></button>
       </nav>
     </aside>
@@ -352,13 +353,12 @@
                     <th>Hora recibida</th>
                     <th>Sensor</th>
                     <th>Nivel</th>
-                    <th>Mensaje</th>
+                    <th>Línea del Monitor Serial</th>
                     <th>Topic MQTT</th>
-                    <th>Payload</th>
                   </tr>
                 </thead>
                 <tbody id="logsTableBody">
-                  <tr><td colspan="6" class="table-empty">Cargando logs...</td></tr>
+                  <tr><td colspan="5" class="table-empty">Cargando logs...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -367,6 +367,58 @@
           <div class="logs-load-more">
             <button class="btn btn-outline" id="loadMoreLogsBtn">Cargar más logs</button>
           </div>
+        </section>
+
+        <section class="view" id="view-ota" data-search-keywords="ota actualizacion firmware remoto esp32 version sha256 progreso mqtt historial manifest actualización">
+          <div class="view-head">
+            <div>
+              <span class="section-kicker">Actualización remota</span>
+              <h1>OTA remoto de dispositivos ESP32</h1>
+              <p class="muted">Envía una orden OTA por MQTT y observa el progreso del ESP32 mediante Socket.IO. El firmware se descarga directamente desde la URL HTTPS indicada en la orden.</p>
+            </div>
+            <div class="view-actions">
+              <button class="btn btn-outline" id="otaLoadManifestBtn">Cargar manifest</button>
+              <button class="btn btn-primary" id="otaRefreshBtn">Actualizar estado</button>
+            </div>
+          </div>
+          <div class="ota-layout">
+            <article class="panel ota-command-panel">
+              <div class="panel-head"><h3>Solicitar actualización</h3><span class="chip" id="otaRealtimeChip">Socket.IO pendiente</span></div>
+              <div class="form-grid ota-form-grid">
+                <label>ESP32 / sensor_id<select id="otaSensorId"><option value="">Seleccionar sensor</option></select></label>
+                <label>Versión<input type="text" id="otaVersion" placeholder="1.1.0" autocomplete="off"></label>
+                <label class="ota-full-field">URL HTTPS del firmware<input type="url" id="otaUrl" placeholder="https://servidor/firmware/NPK_Smart_Cacao_1.1.0.bin" autocomplete="off"></label>
+                <label>SHA-256<input type="text" id="otaSha256" maxlength="64" placeholder="64 caracteres hexadecimales" autocomplete="off" spellcheck="false"></label>
+                <label>Tamaño (bytes)<input type="number" id="otaSize" min="0" step="1" placeholder="Opcional"></label>
+              </div>
+              <div class="ota-actions-row">
+                <button class="btn btn-secondary" id="otaUseManifestBtn">Usar manifest</button>
+                <button class="btn btn-primary" id="otaRequestBtn">Solicitar OTA</button>
+              </div>
+              <p class="muted ota-note">MQTT transporta la orden y los metadatos; el archivo <code>.bin</code> no se envía por MQTT.</p>
+            </article>
+            <article class="panel ota-status-panel">
+              <div class="panel-head"><h3>Estado del dispositivo</h3><span class="chip" id="otaStatusChip">Sin selección</span></div>
+              <div id="otaStatusEmpty" class="ota-empty-state">Selecciona un ESP32 para consultar el último trabajo OTA.</div>
+              <div id="otaStatusContent" class="hidden">
+                <div class="ota-job-head"><div><span class="muted">Job ID</span><strong id="otaJobId">--</strong></div><div><span class="muted">Versión</span><strong id="otaJobVersion">--</strong></div></div>
+                <div class="ota-progress-track"><span id="otaProgressBar"></span></div>
+                <div class="ota-progress-meta"><strong id="otaProgressValue">0%</strong><span id="otaProgressMessage">--</span></div>
+                <div class="settings-list ota-details">
+                  <label><span>Estado</span><strong id="otaJobStatus">--</strong></label>
+                  <label><span>Creado</span><strong id="otaJobCreated">--</strong></label>
+                  <label><span>Inicio</span><strong id="otaJobStarted">--</strong></label>
+                  <label><span>Finalizado</span><strong id="otaJobCompleted">--</strong></label>
+                  <label><span>Error</span><strong id="otaJobError">--</strong></label>
+                  <label><span>MQTT topic</span><strong id="otaJobTopic">--</strong></label>
+                </div>
+              </div>
+            </article>
+          </div>
+          <article class="panel ota-history-panel">
+            <div class="panel-head"><h3>Historial OTA</h3><span class="muted" id="otaHistoryMeta">Selecciona un sensor</span></div>
+            <div class="table-wrap"><table class="data-table ota-history-table"><thead><tr><th>Fecha</th><th>Versión</th><th>Estado</th><th>Progreso</th><th>Mensaje</th><th>Job ID</th></tr></thead><tbody id="otaHistoryBody"><tr><td colspan="6" class="table-empty">No hay sensor seleccionado.</td></tr></tbody></table></div>
+          </article>
         </section>
 
         <section class="view" id="view-reportes" data-search-keywords="reportes informes pdf csv html generar sensor rango fechas descargar">
