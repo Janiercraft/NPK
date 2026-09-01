@@ -130,6 +130,7 @@
         <button class="side-item" data-view="estadisticas"><span>📈</span><b>Analíticas</b></button>
         <button class="side-item" data-view="alertas"><span>🚨</span><b>Alertas</b></button>
         <button class="side-item" data-view="logs"><span>🧾</span><b>Logs ESP32</b></button>
+        <button class="side-item" data-view="control"><span>🎛️</span><b>Control ESP32</b></button>
         <button class="side-item" data-view="ota"><span>⬆️</span><b>OTA Remoto</b></button>
         <button class="side-item" data-view="reportes"><span>📄</span><b>Informes</b></button>
       </nav>
@@ -367,6 +368,23 @@
           <div class="logs-load-more">
             <button class="btn btn-outline" id="loadMoreLogsBtn">Cargar más logs</button>
           </div>
+        </section>
+
+        <section class="view" id="view-control" data-search-keywords="control reinicio reiniciar apagar encender sensores npk temperatura humedad remoto esp32">
+          <div class="view-head">
+            <div><span class="section-kicker">Control remoto</span><h1>Control del ESP32</h1><p class="muted">Apagar aquí significa detener únicamente la toma de datos del sensor. Wi‑Fi, MQTT, portal y OTA siguen activos.</p></div>
+            <div class="view-actions"><button class="btn btn-outline" id="controlRefreshBtn">Actualizar estado</button><button class="btn btn-danger" id="controlRestartBtn">↻ Reiniciar ESP32</button></div>
+          </div>
+          <div class="control-top-grid">
+            <article class="panel"><div class="panel-head"><h3>Dispositivo</h3><span class="chip" id="controlOnlineChip">● Sin estado</span></div><label>ESP32 / sensor_id<select id="controlSensorId"><option value="">Seleccionar sensor</option></select></label><p class="muted" id="controlSelectedLabel" style="margin-top:12px;">Selecciona un ESP32</p></article>
+            <article class="panel"><div class="panel-head"><h3>Control global</h3><span class="chip" id="controlAllState">--</span></div><div class="control-button-row"><button class="btn btn-primary" id="controlAllOnBtn">Encender todos</button><button class="btn btn-outline" id="controlAllOffBtn">Apagar todos</button></div><p class="muted">Solo detiene/activa las lecturas NPK, temperatura y humedad del suelo.</p></article>
+          </div>
+          <div class="control-sensor-grid">
+            <article class="panel control-card"><div class="panel-head"><h3>🌱 NPK</h3><span class="chip" id="controlNpkState">--</span></div><p class="muted">Lectura Modbus N, P y K.</p><div class="control-button-row"><button class="btn btn-primary" id="controlNpkOnBtn">Encender</button><button class="btn btn-outline" id="controlNpkOffBtn">Apagar</button></div></article>
+            <article class="panel control-card"><div class="panel-head"><h3>🌡️ Temperatura</h3><span class="chip" id="controlTempState">--</span></div><p class="muted">Lectura del DS18B20.</p><div class="control-button-row"><button class="btn btn-primary" id="controlTempOnBtn">Encender</button><button class="btn btn-outline" id="controlTempOffBtn">Apagar</button></div></article>
+            <article class="panel control-card"><div class="panel-head"><h3>💧 Humedad suelo</h3><span class="chip" id="controlSoilState">--</span></div><p class="muted">Lectura analógica del sensor capacitivo v1.2.</p><div class="control-button-row"><button class="btn btn-primary" id="controlSoilOnBtn">Encender</button><button class="btn btn-outline" id="controlSoilOffBtn">Apagar</button></div></article>
+          </div>
+          <article class="panel control-warning"><strong>Importante:</strong> el botón “Apagar” no corta la alimentación eléctrica del sensor ni del ESP32. El equipo permanece accesible para volver a encender las lecturas o ejecutar un reinicio/OTA remoto.</article>
         </section>
 
         <section class="view" id="view-ota" data-search-keywords="ota actualizacion firmware remoto esp32 version sha256 progreso mqtt historial manifest actualización">

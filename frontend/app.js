@@ -9,7 +9,7 @@ const CHIGORODO = {
 };
 
 const API_CONFIG = {
-  baseUrl: 'https://npk-yvtg.onrender.com/',
+  baseUrl: 'http://localhost:3000',
 
   // Primero se consultan las rutas reales del backend actual.
   // /api/sensor/all debe devolver todos los sensores de MongoDB.
@@ -38,6 +38,8 @@ const API_CONFIG = {
   otaRequestEndpoint: sensorId => `/api/device/${encodeURIComponent(sensorId)}/ota`,
   otaStatusEndpoint: sensorId => `/api/device/${encodeURIComponent(sensorId)}/ota/status`,
   otaHistoryEndpoint: sensorId => `/api/device/${encodeURIComponent(sensorId)}/ota/history`,
+  controlEndpoint: sensorId => `/api/device/${encodeURIComponent(sensorId)}/control`,
+  controlStatusEndpoint: sensorId => `/api/device/${encodeURIComponent(sensorId)}/control/status`,
   pollIntervalMs: 10000,
   timeoutMs: 7000
 };
@@ -67,6 +69,8 @@ let state = {
 };
 
 let sensorReadings = [];
+let deviceControlStates = {};
+let controlSelectedSensorId = '';
 let localSensors = loadJSON('npk-local-sensor-placeholders', []);
 let hiddenSensorIds = loadJSON('npk-hidden-sensors', []);
 let sensorAliases = loadJSON('npk-sensor-aliases', {});
@@ -268,6 +272,9 @@ function setView(viewName = 'dashboard') {
   if (breadcrumb) breadcrumb.textContent = `Inicio / ${title}`;
   if (normalized === 'mapa') setTimeout(() => sensorMap?.invalidateSize?.(), 350);
   if (normalized === 'meteorologia') setTimeout(() => weatherMap?.invalidateSize?.(), 350);
+  if (normalized === 'control') {
+    setTimeout(() => initControlView(), 50);
+  }
   if (normalized === 'ota') {
     setTimeout(() => {
       if (!otaSelectedSensorId) selectOtaSensor($('#otaSensorId')?.value || getAllSensors()[0]?.id || '');
@@ -309,6 +316,17 @@ function initInteractions() {
   $('#refreshWeatherBtn')?.addEventListener('click', () => loadWeather());
   $('#otaSensorId')?.addEventListener('change', () => selectOtaSensor($('#otaSensorId')?.value || ''));
   $('#otaRequestBtn')?.addEventListener('click', requestOtaFromFrontend);
+  $('#controlSensorId')?.addEventListener('change', () => { controlSelectedSensorId = $('#controlSensorId')?.value || ''; refreshControlSelectedSensor(); });
+  $('#controlRefreshBtn')?.addEventListener('click', () => refreshControlSelectedSensor(false));
+  $('#controlRestartBtn')?.addEventListener('click', () => sendDeviceControl('RESTART'));
+  $('#controlAllOnBtn')?.addEventListener('click', () => sendDeviceControl('ALL_SENSORS', null, true));
+  $('#controlAllOffBtn')?.addEventListener('click', () => sendDeviceControl('ALL_SENSORS', null, false));
+  $('#controlNpkOnBtn')?.addEventListener('click', () => sendDeviceControl('SENSOR_CONTROL', 'npk', true));
+  $('#controlNpkOffBtn')?.addEventListener('click', () => sendDeviceControl('SENSOR_CONTROL', 'npk', false));
+  $('#controlTempOnBtn')?.addEventListener('click', () => sendDeviceControl('SENSOR_CONTROL', 'temperature', true));
+  $('#controlTempOffBtn')?.addEventListener('click', () => sendDeviceControl('SENSOR_CONTROL', 'temperature', false));
+  $('#controlSoilOnBtn')?.addEventListener('click', () => sendDeviceControl('SENSOR_CONTROL', 'soil_moisture', true));
+  $('#controlSoilOffBtn')?.addEventListener('click', () => sendDeviceControl('SENSOR_CONTROL', 'soil_moisture', false));
   $('#otaRefreshBtn')?.addEventListener('click', () => refreshOtaSelectedSensor({ silent: false }));
   $('#otaLoadManifestBtn')?.addEventListener('click', loadOtaManifest);
   $('#otaUseManifestBtn')?.addEventListener('click', useOtaManifest);
@@ -359,6 +377,12 @@ function initLogsRealtime() {
       setText('#logsRealtimeState', 'ON');
     });
 
+    logSocket.on('device-status', status => {
+      const id = String(status?.sensor_id || '').trim();
+      if (!id) return;
+      deviceControlStates[id] = { ...(deviceControlStates[id] || {}), ...status };
+      if (controlSelectedSensorId === id) renderControlState();
+    });
     logSocket.on('server-ready', () => {
       setLogsRealtimeState(true, 'Socket.IO listo para eventos del backend.');
     });
@@ -1282,6 +1306,74 @@ async function requestOtaFromFrontend() {
       button.disabled = false;
       button.textContent = button.dataset.originalText || 'Solicitar OTA';
     }
+  }
+}
+
+
+async function initControlView() {
+  const ids = getAllSensors().map(s => s.id).filter(Boolean);
+  const select = $('#controlSensorId');
+  if (!select) return;
+  select.innerHTML = `<option value="">Seleccionar sensor</option>` + ids.map(id => `<option value="${escapeAttr(id)}">${escapeHtml(id)}</option>`).join('');
+  controlSelectedSensorId = controlSelectedSensorId || ids[0] || '';
+  if (controlSelectedSensorId && ids.includes(controlSelectedSensorId)) select.value = controlSelectedSensorId;
+  await refreshControlSelectedSensor(true);
+}
+
+async function refreshControlSelectedSensor(silent = true) {
+  const sensorId = controlSelectedSensorId || $('#controlSensorId')?.value || '';
+  if (!sensorId) { renderControlState(); return; }
+  controlSelectedSensorId = sensorId;
+  try {
+    const response = await fetchWithTimeout(buildUrl(API_CONFIG.controlStatusEndpoint(sensorId)), { headers: { Accept: 'application/json' } }, API_CONFIG.timeoutMs);
+    const data = await response.json().catch(() => ({}));
+    if (response.ok && data) deviceControlStates[sensorId] = { ...(deviceControlStates[sensorId] || {}), ...data };
+  } catch (error) {
+    if (!silent) toast('Control remoto', error.message || 'No se pudo consultar el estado.');
+  }
+  renderControlState();
+}
+
+function currentControlState() {
+  const status = deviceControlStates[controlSelectedSensorId] || {};
+  const sensors = status.sensors || {};
+  return {
+    npk: sensors.npk !== false,
+    temperature: sensors.temperature !== false,
+    soil_moisture: sensors.soil_moisture !== false,
+    online: status.online === true,
+    publishing: status.publishing !== false
+  };
+}
+
+function renderControlState() {
+  const id = controlSelectedSensorId || $('#controlSensorId')?.value || '';
+  const status = id ? currentControlState() : { npk: false, temperature: false, soil_moisture: false, online: false, publishing: false };
+  setText('#controlSelectedLabel', id ? `ESP32 ${id}` : 'Selecciona un ESP32');
+  setText('#controlOnlineChip', status.online ? '● En línea' : '● Sin estado');
+  setText('#controlNpkState', status.npk ? 'ENCENDIDO' : 'APAGADO');
+  setText('#controlTempState', status.temperature ? 'ENCENDIDO' : 'APAGADO');
+  setText('#controlSoilState', status.soil_moisture ? 'ENCENDIDO' : 'APAGADO');
+  setText('#controlAllState', status.npk && status.temperature && status.soil_moisture ? 'TODOS ENCENDIDOS' : (!status.npk && !status.temperature && !status.soil_moisture ? 'TODOS APAGADOS' : 'CONFIGURACIÓN MIXTA'));
+}
+
+async function sendDeviceControl(command, sensor = null, enabled = null) {
+  const sensorId = controlSelectedSensorId || $('#controlSensorId')?.value || '';
+  if (!sensorId) return toast('Control remoto', 'Selecciona un ESP32.');
+  const body = { command };
+  if (sensor) body.sensor = sensor;
+  if (enabled !== null) body.enabled = enabled;
+  if (command === 'RESTART' && !window.confirm(`¿Reiniciar físicamente el ESP32 ${sensorId}?`)) return;
+  if (command === 'ALL_SENSORS' && !window.confirm(`${enabled ? 'Encender' : 'Apagar'} las tres tomas de datos de ${sensorId}?`)) return;
+  if (command === 'SENSOR_CONTROL' && !window.confirm(`${enabled ? 'Encender' : 'Apagar'} ${sensor === 'soil_moisture' ? 'humedad del suelo' : sensor === 'temperature' ? 'temperatura' : 'NPK'} en ${sensorId}?`)) return;
+  try {
+    const response = await fetchWithTimeout(buildUrl(API_CONFIG.controlEndpoint(sensorId)), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }, API_CONFIG.timeoutMs);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.message || `HTTP ${response.status}`);
+    toast('Control enviado', command === 'RESTART' ? `Reinicio solicitado para ${sensorId}.` : 'La orden fue enviada por MQTT.');
+    setTimeout(() => refreshControlSelectedSensor(true), command === 'RESTART' ? 1500 : 500);
+  } catch (error) {
+    toast('Error de control', error.message || 'No se pudo enviar la orden.');
   }
 }
 

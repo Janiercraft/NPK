@@ -1,7 +1,8 @@
 const {
   requestOta,
   getLatestJob,
-  getHistory
+  getHistory,
+  resolveFirmwareMetadata
 } = require("../services/otaService");
 const mqttService = require("../services/mqttService");
 
@@ -11,7 +12,12 @@ const sendError = (res, error) => {
     DEVICE_NOT_FOUND: 404,
     MQTT_DISCONNECTED: 503,
     MQTT_PUBLISH_FAILED: 503,
-    OTA_JOB_NOT_FOUND: 404
+    OTA_JOB_NOT_FOUND: 404,
+    OTA_FIRMWARE_HTTP_ERROR: 502,
+    OTA_FIRMWARE_SIZE_UNKNOWN: 422,
+    OTA_FIRMWARE_METADATA_ERROR: 502,
+    OTA_FIRMWARE_TOO_LARGE: 413,
+    OTA_SIZE_MISMATCH: 422
   };
 
   const status = statusByCode[error.code] || 500;
@@ -117,7 +123,7 @@ const getManifest = async (_req, res) => {
   const version = process.env.OTA_VERSION || "";
   const url = process.env.OTA_URL || "";
   const sha256 = (process.env.OTA_SHA256 || "").toLowerCase();
-  const size = process.env.OTA_SIZE ? Number(process.env.OTA_SIZE) : null;
+  const configuredSize = process.env.OTA_SIZE ? Number(process.env.OTA_SIZE) : null;
 
   if (!version || !url || !sha256) {
     return res.status(503).json({
@@ -127,12 +133,32 @@ const getManifest = async (_req, res) => {
     });
   }
 
-  res.json({
-    version,
-    url,
-    sha256,
-    size: Number.isFinite(size) ? size : null
-  });
+  try {
+    const metadata = (Number.isFinite(configuredSize) && configuredSize > 0)
+      ? { size: configuredSize, url }
+      : await resolveFirmwareMetadata(url);
+
+    res.json({
+      version,
+      url,
+      sha256,
+      size: metadata.size,
+      resolved_url: metadata.url
+    });
+  } catch (error) {
+    const statusByCode = {
+      OTA_FIRMWARE_HTTP_ERROR: 502,
+      OTA_FIRMWARE_METADATA_ERROR: 502,
+      OTA_FIRMWARE_SIZE_UNKNOWN: 422,
+      OTA_FIRMWARE_TOO_LARGE: 413
+    };
+
+    res.status(statusByCode[error.code] || 502).json({
+      ok: false,
+      code: error.code || "OTA_MANIFEST_METADATA_ERROR",
+      message: error.message
+    });
+  }
 };
 
 module.exports = {

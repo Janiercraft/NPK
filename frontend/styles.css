@@ -1082,3 +1082,12 @@ input:focus, select:focus { border-color: rgba(31,209,154,.45); box-shadow: 0 0 
   .ota-progress-meta { flex-direction:column; }
   .ota-progress-meta span { text-align:left; }
 }
+
+
+/* Control remoto ESP32 */
+.control-top-grid, .control-sensor-grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); margin-bottom:16px; }
+.control-sensor-grid { grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); }
+.control-button-row { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+.control-card .chip, #controlOnlineChip { font-weight:700; }
+.control-warning { border-left:4px solid currentColor; }
+.btn-danger { border:1px solid rgba(220,38,38,.45); background:rgba(220,38,38,.12); color:#fecaca; }

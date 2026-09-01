@@ -17,6 +17,7 @@ const client = mqtt.connect(MQTT_BROKER, {
 });
 
 let io = null;
+const latestDeviceStatus = new Map();
 
 const setIO = (ioInstance) => {
   io = ioInstance;
@@ -185,13 +186,16 @@ client.on("message", async (topic, message) => {
       payload: rawPayload
     });
 
+    let parsedStatus = null;
+    try { parsedStatus = JSON.parse(rawPayload); } catch {}
+    latestDeviceStatus.set(String(sensorId), {
+      sensor_id: sensorId,
+      ...(parsedStatus && typeof parsedStatus === "object" ? parsedStatus : {}),
+      topic,
+      received_at: new Date().toISOString()
+    });
     if (io) {
-      io.emit("device-status", {
-        sensor_id: sensorId,
-        topic,
-        payload: rawPayload,
-        timestamp: new Date()
-      });
+      io.emit("device-status", latestDeviceStatus.get(String(sensorId)));
     }
 
     return;
@@ -231,18 +235,8 @@ client.on("message", async (topic, message) => {
       data.temp
     );
 
-    if (
-      nitrogeno === null ||
-      fosforo === null ||
-      potasio === null
-    ) {
-      console.error("Datos NPK inválidos recibidos:", {
-        sensorId,
-        nitrogeno,
-        fosforo,
-        potasio,
-        payloadOriginal: data
-      });
+    if (nitrogeno === null && fosforo === null && potasio === null && humedad_suelo === null && temperatura_ambiente === null) {
+      console.warn("Lectura MQTT sin ningún sensor activo; no se guarda:", { sensorId, payloadOriginal: data });
       return;
     }
 
@@ -302,5 +296,6 @@ module.exports = {
   publishAsync,
   publish: (topic, payload, options, callback) => {
     return client.publish(topic, payload, options, callback);
-  }
+  },
+  getDeviceStatus: (sensorId) => latestDeviceStatus.get(String(sensorId)) || null
 };

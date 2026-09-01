@@ -8,17 +8,17 @@ const sensorSchema = new mongoose.Schema({
 
   nitrogeno: {
     type: Number,
-    required: true
+    default: null
   },
 
   fosforo: {
     type: Number,
-    required: true
+    default: null
   },
 
   potasio: {
     type: Number,
-    required: true
+    default: null
   },
 
   humedad_suelo: {

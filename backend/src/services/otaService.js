@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const https = require("https");
 const OtaJob = require("../models/OtaJob");
 const SensorData = require("../models/SensorData");
 const EspLog = require("../models/EspLog");
@@ -25,6 +26,194 @@ const TERMINAL_STATUSES = new Set([
 ]);
 
 const MQTT_PREFIX = "npk";
+
+const DEFAULT_OTA_MAX_FIRMWARE_SIZE = 1572864;
+const MAX_FIRMWARE_REDIRECTS = 5;
+const METADATA_REQUEST_TIMEOUT_MS = 15000;
+
+const getMaxFirmwareSize = () => {
+  const configured = Number(process.env.OTA_MAX_FIRMWARE_SIZE);
+  return Number.isInteger(configured) && configured > 0
+    ? configured
+    : DEFAULT_OTA_MAX_FIRMWARE_SIZE;
+};
+
+const normalizeRemoteUrl = (value) => {
+  try {
+    const parsed = new URL(String(value || ""));
+    if (parsed.protocol !== "https:") return null;
+    return parsed;
+  } catch (_error) {
+    return null;
+  }
+};
+
+const requestHttpsHeaders = (url, { method = "HEAD", headers = {} } = {}) => {
+  const parsed = normalizeRemoteUrl(url);
+
+  if (!parsed) {
+    const error = new Error("La URL OTA remota debe ser HTTPS.");
+    error.code = "OTA_FIRMWARE_METADATA_ERROR";
+    return Promise.reject(error);
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = https.request(parsed, {
+      method,
+      headers: {
+        "User-Agent": "NPK-Smart-Cacao-OTA/1.0",
+        "Accept": "application/octet-stream,*/*",
+        "Accept-Encoding": "identity",
+        ...headers
+      },
+      timeout: METADATA_REQUEST_TIMEOUT_MS
+    }, (response) => {
+      const location = response.headers.location || null;
+      const statusCode = response.statusCode || 0;
+      const contentLengthHeader = response.headers["content-length"];
+      const contentRange = response.headers["content-range"] || null;
+      const contentLength = contentLengthHeader
+        ? Number(contentLengthHeader)
+        : null;
+
+      // We only need response headers. Do not download the complete firmware.
+      response.resume();
+
+      resolve({
+        statusCode,
+        location,
+        contentLength: Number.isInteger(contentLength) && contentLength >= 0 ? contentLength : null,
+        contentRange,
+        headers: response.headers
+      });
+    });
+
+    request.on("timeout", () => {
+      request.destroy(new Error("Timeout consultando metadatos del firmware OTA."));
+    });
+
+    request.on("error", reject);
+    request.end();
+  });
+};
+
+const extractTotalFromContentRange = (value) => {
+  if (!value) return null;
+  const match = /\/([0-9]+)$/.exec(String(value).trim());
+  if (!match) return null;
+  const size = Number(match[1]);
+  return Number.isInteger(size) && size >= 0 ? size : null;
+};
+
+const resolveFirmwareMetadata = async (initialUrl, redirectCount = 0) => {
+  if (redirectCount > MAX_FIRMWARE_REDIRECTS) {
+    const error = new Error(`El firmware OTA excedió el máximo de ${MAX_FIRMWARE_REDIRECTS} redirecciones.`);
+    error.code = "OTA_FIRMWARE_HTTP_ERROR";
+    throw error;
+  }
+
+  const current = normalizeRemoteUrl(initialUrl);
+  if (!current) {
+    const error = new Error("La URL del firmware OTA debe ser HTTPS.");
+    error.code = "OTA_FIRMWARE_METADATA_ERROR";
+    throw error;
+  }
+
+  const currentUrl = current.toString();
+  let head = await requestHttpsHeaders(currentUrl, { method: "HEAD" });
+
+  if ([301, 302, 303, 307, 308].includes(head.statusCode)) {
+    if (!head.location) {
+      const error = new Error(`GitHub respondió ${head.statusCode} sin indicar Location.`);
+      error.code = "OTA_FIRMWARE_HTTP_ERROR";
+      throw error;
+    }
+    const redirectUrl = new URL(head.location, currentUrl).toString();
+    if (!normalizeRemoteUrl(redirectUrl)) {
+      const error = new Error("La redirección del firmware OTA no apunta a HTTPS.");
+      error.code = "OTA_FIRMWARE_METADATA_ERROR";
+      throw error;
+    }
+    return resolveFirmwareMetadata(redirectUrl, redirectCount + 1);
+  }
+
+  if ([405, 501].includes(head.statusCode) || (head.statusCode >= 400 && head.statusCode !== 404)) {
+    const rangeResponse = await requestHttpsHeaders(currentUrl, {
+      method: "GET",
+      headers: { Range: "bytes=0-0" }
+    });
+
+    if ([301, 302, 303, 307, 308].includes(rangeResponse.statusCode)) {
+      if (!rangeResponse.location) {
+        const error = new Error(`Redirección HTTP ${rangeResponse.statusCode} sin Location.`);
+        error.code = "OTA_FIRMWARE_HTTP_ERROR";
+        throw error;
+      }
+      const redirectUrl = new URL(rangeResponse.location, currentUrl).toString();
+      if (!normalizeRemoteUrl(redirectUrl)) {
+        const error = new Error("La redirección del firmware OTA no apunta a HTTPS.");
+        error.code = "OTA_FIRMWARE_METADATA_ERROR";
+        throw error;
+      }
+      return resolveFirmwareMetadata(redirectUrl, redirectCount + 1);
+    }
+
+    if (![200, 206].includes(rangeResponse.statusCode)) {
+      const error = new Error(`El servidor de firmware respondió HTTP ${rangeResponse.statusCode}.`);
+      error.code = "OTA_FIRMWARE_HTTP_ERROR";
+      throw error;
+    }
+
+    const size = extractTotalFromContentRange(rangeResponse.contentRange) ?? rangeResponse.contentLength;
+    if (size === null || size <= 0) {
+      const error = new Error("No se pudo determinar el tamaño del firmware remoto.");
+      error.code = "OTA_FIRMWARE_SIZE_UNKNOWN";
+      throw error;
+    }
+
+    return { url: currentUrl, size, statusCode: rangeResponse.statusCode, redirects: redirectCount };
+  }
+
+  if (head.statusCode !== 200 && head.statusCode !== 206) {
+    const error = new Error(`El servidor de firmware respondió HTTP ${head.statusCode}.`);
+    error.code = "OTA_FIRMWARE_HTTP_ERROR";
+    throw error;
+  }
+
+  const size = head.contentLength ?? extractTotalFromContentRange(head.contentRange);
+  if (size === null || size <= 0) {
+    // Some object stores do not implement HEAD. Use a one-byte range request.
+    const rangeResponse = await requestHttpsHeaders(currentUrl, {
+      method: "GET",
+      headers: { Range: "bytes=0-0" }
+    });
+
+    if ([301, 302, 303, 307, 308].includes(rangeResponse.statusCode)) {
+      if (!rangeResponse.location) {
+        const error = new Error(`Redirección HTTP ${rangeResponse.statusCode} sin Location.`);
+        error.code = "OTA_FIRMWARE_HTTP_ERROR";
+        throw error;
+      }
+      const redirectUrl = new URL(rangeResponse.location, currentUrl).toString();
+      if (!normalizeRemoteUrl(redirectUrl)) {
+        const error = new Error("La redirección del firmware OTA no apunta a HTTPS.");
+        error.code = "OTA_FIRMWARE_METADATA_ERROR";
+        throw error;
+      }
+      return resolveFirmwareMetadata(redirectUrl, redirectCount + 1);
+    }
+
+    const rangeSize = extractTotalFromContentRange(rangeResponse.contentRange) ?? rangeResponse.contentLength;
+    if (![200, 206].includes(rangeResponse.statusCode) || rangeSize === null || rangeSize <= 0) {
+      const error = new Error("No se pudo determinar el tamaño del firmware remoto.");
+      error.code = "OTA_FIRMWARE_SIZE_UNKNOWN";
+      throw error;
+    }
+    return { url: currentUrl, size: rangeSize, statusCode: rangeResponse.statusCode, redirects: redirectCount };
+  }
+
+  return { url: currentUrl, size, statusCode: head.statusCode, redirects: redirectCount };
+};
 
 let io = null;
 
@@ -243,8 +432,33 @@ const requestOta = async ({ sensorId, version, url, sha256, size, requestedBy, p
     };
   }
 
+  let resolvedMetadata;
+  try {
+    resolvedMetadata = await resolveFirmwareMetadata(url);
+  } catch (error) {
+    throw error;
+  }
+
+  const configuredMax = getMaxFirmwareSize();
+  if (resolvedMetadata.size > configuredMax) {
+    const error = new Error(
+      `El firmware remoto mide ${resolvedMetadata.size} bytes y supera el máximo OTA configurado de ${configuredMax} bytes.`
+    );
+    error.code = "OTA_FIRMWARE_TOO_LARGE";
+    throw error;
+  }
+
+  if (size !== undefined && size !== null && Number(size) > 0 && Number(size) !== resolvedMetadata.size) {
+    const error = new Error(
+      `El size indicado (${Number(size)}) no coincide con el tamaño real del firmware (${resolvedMetadata.size} bytes).`
+    );
+    error.code = "OTA_SIZE_MISMATCH";
+    throw error;
+  }
+
   const jobId = buildJobId(sensorId);
   const mqttTopic = mqttTopicForCommand(sensorId);
+  const normalizedFirmwareSize = resolvedMetadata.size;
 
   const job = await OtaJob.create({
     job_id: jobId,
@@ -252,7 +466,7 @@ const requestOta = async ({ sensorId, version, url, sha256, size, requestedBy, p
     version: String(version).trim(),
     url: String(url).trim(),
     sha256: String(sha256).trim().toLowerCase(),
-    firmware_size: size === undefined || size === null ? null : Number(size),
+    firmware_size: normalizedFirmwareSize,
     previous_version: previousVersion ? String(previousVersion).trim() : null,
     requested_by: requestedBy ? String(requestedBy).trim() : null,
     status: "REQUESTED",
@@ -286,12 +500,10 @@ const requestOta = async ({ sensorId, version, url, sha256, size, requestedBy, p
     job_id: job.job_id,
     version: job.version,
     url: job.url,
-    sha256: job.sha256
+    sha256: job.sha256,
+    size: job.firmware_size,
+    max_size: configuredMax
   };
-
-  if (job.firmware_size !== null && job.firmware_size !== undefined) {
-    commandPayload.size = job.firmware_size;
-  }
 
   try {
     await mqttService.publishAsync(mqttTopic, JSON.stringify(commandPayload), {
@@ -486,6 +698,7 @@ module.exports = {
   isValidFirmwareUrl,
   isValidSha256,
   getDeviceExists,
+  resolveFirmwareMetadata,
   getLatestJob,
   getHistory,
   requestOta,
