@@ -1710,7 +1710,7 @@ async function loadAnalyticsHistory({ force = false } = {}) {
   if (status) status.textContent = 'Consultando historial…';
   try {
     const endpoint = `/api/sensor/${encodeURIComponent(sensorId)}/history`;
-    const start = new Date(Date.now() - hours * 3600000).toISOString();
+    const start = new Date(Date.now() - hours * 3600000).toISOString().slice(0, 10);
     const result = await fetchWithTimeout(buildUrlWithParams(endpoint, { start, source: 'todos', limit: 2000 }),
       { headers: { Accept: 'application/json' } }, 12000);
     if (!result.ok) throw new Error(`HTTP ${result.status}`);
