@@ -114,7 +114,6 @@ function init() {
   initLogsRealtime();
   initOtaRealtime();
   loadLogsFromBackend({ silent: true });
-  toast('Frontend listo', 'La página consultará el backend y mostrará sensores y logs ESP32 en tiempo real.');
 }
 
 function loadJSON(key, fallback) {
@@ -1805,7 +1804,6 @@ async function loadWeather() {
     state.weather = await response.json();
     renderWeather();
     drawAllCharts();
-    toast('Meteorología actualizada', 'Datos reales de Chigorodó cargados.');
   } catch (error) {
     state.weather = null;
     renderWeatherUnavailable();
