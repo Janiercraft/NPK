@@ -1421,39 +1421,57 @@ window.openSensorOta = function(id) {
   refreshOtaSelectedSensor({ silent: false });
 };
 
+// Avisos compactos: un aviso por problema y sensor, sin duplicados por variaciones de valores.
 function generateAlerts(sourceRows = getAllSensors()) {
   const alerts = [];
   sourceRows.forEach(sensor => {
     const label = sensor.id || 'Sensor sin ID';
-    if (!sensor.realData) {
-      alerts.push({ type: 'Sensor sin lectura', severity: 'info', source: label, detail: `El sensor ${label} está listado, pero no tiene lecturas NPK, humedad o temperatura en este momento.` });
+    // Los sensores agregados como marcadores locales no generan alarmas hasta que existan lecturas.
+    if (!sensor.realData) return;
+
+    // Si la lectura está desactualizada, sus valores también lo están: no crear alarmas adicionales.
+    if (normalizeUiStatus(sensor.status) === 'no_conectado' || isStale(sensor.timestamp)) {
+      alerts.push({ type: 'Conectividad', severity: 'critical', source: label,
+        detail: `El sensor ${label} no reporta lecturas recientes. Revisa alimentación, WiFi o backend.` });
       return;
     }
-    if (normalizeUiStatus(sensor.status) === 'no_conectado' || isStale(sensor.timestamp)) {
-      alerts.push({ type: 'Conectividad', severity: 'critical', source: label, detail: `El sensor ${label} no reporta lectura reciente. Revisa alimentación, WiFi o backend.` });
+
+    const lowNutrients = [
+      ['N', sensor.n, alertRules.nitrogen],
+      ['P', sensor.p, alertRules.phosphorus],
+      ['K', sensor.k, alertRules.potassium]
+    ].map(([name, value, rule]) => ({ name, value, severity: classifyLow(value, rule) }))
+      .filter(item => item.severity);
+    if (lowNutrients.length) {
+      alerts.push({ type: 'Nutrientes bajos',
+        severity: lowNutrients.some(item => item.severity === 'critical') ? 'critical' : 'warning',
+        source: label,
+        detail: `Valores fuera de rango: ${lowNutrients.map(item => `${item.name} ${item.value} ppm`).join(', ')}.` });
     }
-    const nutrientChecks = [
-      ['Nitrógeno bajo', sensor.n, alertRules.nitrogen, 'nitrógeno'],
-      ['Fósforo bajo', sensor.p, alertRules.phosphorus, 'fósforo'],
-      ['Potasio bajo', sensor.k, alertRules.potassium, 'potasio']
-    ];
-    nutrientChecks.forEach(([type, value, rule, name]) => {
-      const severity = classifyLow(value, rule);
-      if (!severity) return;
-      alerts.push({ type, severity, source: label, detail: `${rule.label} = ${value} ${rule.unit}. ${severity === 'critical' ? 'Nivel crítico' : 'Advertencia'}: posible deficiencia de ${name}.` });
-    });
+
     const humidityValue = sensor.soilHumidity ?? sensor.humidity;
     const humiditySeverity = classifyRange(humidityValue, alertRules.humidity);
-    if (humiditySeverity) alerts.push({ type: humidityValue < alertRules.humidity.warningLow ? 'Humedad baja' : 'Humedad alta', severity: humiditySeverity, source: label, detail: `Humedad del suelo = ${humidityValue}%. Rango recomendado ${alertRules.humidity.warningLow}% - ${alertRules.humidity.warningHigh}%.` });
+    if (humiditySeverity) alerts.push({
+      type: humidityValue < alertRules.humidity.warningLow ? 'Humedad baja' : 'Humedad alta',
+      severity: humiditySeverity, source: label,
+      detail: `Humedad del suelo = ${humidityValue}%. Rango recomendado ${alertRules.humidity.warningLow}% - ${alertRules.humidity.warningHigh}%.`
+    });
+
     const tempValue = sensor.airTemp ?? sensor.temp;
     const tempSeverity = classifyRange(tempValue, alertRules.airTemp);
-    if (tempSeverity) alerts.push({ type: tempValue < alertRules.airTemp.warningLow ? 'Temperatura baja' : 'Temperatura alta', severity: tempSeverity, source: label, detail: `Temperatura del aire = ${tempValue}°C. Rango recomendado ${alertRules.airTemp.warningLow}°C - ${alertRules.airTemp.warningHigh}°C.` });
+    if (tempSeverity) alerts.push({
+      type: tempValue < alertRules.airTemp.warningLow ? 'Temperatura baja' : 'Temperatura alta',
+      severity: tempSeverity, source: label,
+      detail: `Temperatura del aire = ${tempValue}°C. Rango recomendado ${alertRules.airTemp.warningLow}°C - ${alertRules.airTemp.warningHigh}°C.`
+    });
   });
   return alerts.map(alert => ({ ...alert, id: alertKey(alert), status: 'active', date: new Date().toISOString() }));
 }
 
 function alertKey(alert) {
-  return normalizeText(`${alert.source || 'sensor'}|${alert.type || 'alerta'}|${alert.detail || ''}`).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 180) || `alerta-${Date.now()}`;
+  // La identidad NO incluye el valor actual: evita crear avisos nuevos por cada medición.
+  return normalizeText(`${alert.source || 'sensor'}|${alert.type || 'alerta'}`)
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 180);
 }
 
 function getActiveAlerts(sourceRows = getAllSensors(), { includeDismissed = false } = {}) {
@@ -1462,78 +1480,84 @@ function getActiveAlerts(sourceRows = getAllSensors(), { includeDismissed = fals
 }
 
 function getNotificationItems() {
-  return [...getActiveAlerts(), ...resolvedNotifications];
+  return getActiveAlerts();
 }
 
 function syncAlertLifecycle(activeAlerts = generateAlerts(getAllSensors())) {
   const activeIds = [...new Set(activeAlerts.map(alert => alert.id))];
-  const now = new Date().toISOString();
-  const resolvedIds = previousActiveAlertIds.filter(id => !activeIds.includes(id));
-
-  resolvedIds.forEach(id => {
-    const last = previousAlertDetails[id] || { type: 'Alerta', source: 'Sensor', detail: 'La condición reportada ya no está activa.' };
-    const alreadyLogged = resolvedNotifications.some(item => item.originalId === id && Date.now() - new Date(item.date || 0).getTime() < 60 * 1000);
-    if (!alreadyLogged) {
-      resolvedNotifications.unshift({
-        id: `resolved-${id}-${Date.now()}`,
-        originalId: id,
-        type: `${last.type} resuelta`,
-        severity: 'resolved',
-        status: 'resolved',
-        source: last.source,
-        detail: `La condición fue corregida o dejó de aparecer en los datos actuales. Antes: ${last.detail}`,
-        date: now
-      });
-    }
-  });
-
-  resolvedNotifications = resolvedNotifications.slice(0, 20);
+  // Una alerta descartada no vuelve a mostrarse hasta que la condición desaparezca.
   dismissedNotificationIds = dismissedNotificationIds.filter(id => activeIds.includes(id));
-  activeAlerts.forEach(alert => {
-    previousAlertDetails[alert.id] = { type: alert.type, source: alert.source, detail: alert.detail, severity: alert.severity };
-  });
   previousActiveAlertIds = activeIds;
   saveJSON('npk-active-alert-ids', previousActiveAlertIds);
-  saveJSON('npk-alert-details', previousAlertDetails);
   saveJSON('npk-dismissed-notifications', dismissedNotificationIds);
-  saveJSON('npk-resolved-notifications', resolvedNotifications);
+  // No generar una segunda notificación cada vez que un problema se resuelve.
+}
+
+// Limpia una sola vez las notificaciones históricas antiguas, que eran la principal fuente de saturación.
+if (loadJSON('npk-notifications-schema-v2', false) !== true) {
+  resolvedNotifications = [];
+  previousActiveAlertIds = [];
+  previousAlertDetails = {};
+  dismissedNotificationIds = [];
+  saveJSON('npk-resolved-notifications', []);
+  saveJSON('npk-active-alert-ids', []);
+  saveJSON('npk-alert-details', {});
+  saveJSON('npk-dismissed-notifications', []);
+  saveJSON('npk-notifications-schema-v2', true);
 }
 
 function renderAlerts() {
   const active = getActiveAlerts();
-  const items = [...active, ...resolvedNotifications];
   const list = $('#alertList');
-  if (list) list.innerHTML = items.length ? items.map(alert => alertTemplate(alert, { dismissible: true })).join('') : emptyState('No hay alertas ni notificaciones reales.');
+  if (list) list.innerHTML = active.length
+    ? active.map(alert => alertTemplate(alert, { dismissible: true })).join('')
+    : emptyState('No hay alertas activas.');
   const summary = $('#alertSummaryGrid');
   if (summary) {
     const critical = active.filter(a => a.severity === 'critical').length;
     const warning = active.filter(a => a.severity === 'warning').length;
     const info = active.filter(a => a.severity === 'info').length;
-    const resolved = resolvedNotifications.length;
-    summary.innerHTML = `<div class="metric-card critical"><strong>${critical}</strong><span>Críticas</span></div><div class="metric-card warning"><strong>${warning}</strong><span>Advertencias</span></div><div class="metric-card"><strong>${info}</strong><span>Informativas</span></div><div class="metric-card resolved"><strong>${resolved}</strong><span>Resueltas</span></div>`;
+    summary.innerHTML = `<div class="metric-card critical"><strong>${critical}</strong><span>Críticas</span></div><div class="metric-card warning"><strong>${warning}</strong><span>Advertencias</span></div><div class="metric-card"><strong>${info}</strong><span>Informativas</span></div><div class="metric-card resolved"><strong>0</strong><span>Resueltas pendientes</span></div>`;
   }
 }
 
 function alertTemplate(alert, { dismissible = false } = {}) {
-  const icon = alert.severity === 'resolved' ? '✅' : alert.severity === 'critical' ? '⚠️' : alert.severity === 'warning' ? '🔔' : 'ℹ️';
-  const date = alert.date ? `<small>${formatDateTime(alert.date)}</small>` : '';
-  const action = dismissible ? `<button class="btn btn-small btn-outline alert-delete" onclick="window.deleteNotification('${escapeAttr(alert.id)}', '${escapeAttr(alert.status || 'active')}')">Eliminar</button>` : '';
-  return `<article class="alert-item ${alert.severity}" data-alert-id="${escapeAttr(alert.id)}"><span class="alert-icon">${icon}</span><div><strong>${escapeHtml(alert.type)}</strong><p>${escapeHtml(alert.detail)}</p><small>${escapeHtml(alert.source)}</small>${date}</div>${action}</article>`;
+  const icon = alert.severity === 'critical' ? '⚠️' : alert.severity === 'warning' ? '🔔' : 'ℹ️';
+  const action = dismissible
+    ? `<button class="btn btn-small btn-outline alert-delete" onclick="window.deleteNotification('${escapeAttr(alert.id)}')">Eliminar</button>` : '';
+  return `<article class="alert-item ${alert.severity}" data-alert-id="${escapeAttr(alert.id)}"><span class="alert-icon">${icon}</span><div><strong>${escapeHtml(alert.type)}</strong><p>${escapeHtml(alert.detail)}</p><small>${escapeHtml(alert.source)}</small></div>${action}</article>`;
 }
 
-window.deleteNotification = function(id, status = 'active') {
+window.deleteNotification = function(id) {
   if (!id) return;
-  if (status === 'resolved' || String(id).startsWith('resolved-')) {
-    resolvedNotifications = resolvedNotifications.filter(item => item.id !== id);
-    saveJSON('npk-resolved-notifications', resolvedNotifications);
-    toast('Notificación eliminada', 'La notificación resuelta fue retirada del historial local.');
-  } else {
-    if (!dismissedNotificationIds.includes(id)) dismissedNotificationIds.push(id);
-    saveJSON('npk-dismissed-notifications', dismissedNotificationIds);
-    toast('Notificación eliminada', 'La alerta activa fue ocultada en este navegador. Si se corrige, aparecerá como resuelta.');
-  }
-  renderAll();
+  if (!dismissedNotificationIds.includes(id)) dismissedNotificationIds.push(id);
+  saveJSON('npk-dismissed-notifications', dismissedNotificationIds);
+  renderNotificationChanges();
 };
+
+window.deleteAllNotifications = function() {
+  const activeIds = getActiveAlerts().map(item => item.id);
+  dismissedNotificationIds = [...new Set([...dismissedNotificationIds, ...activeIds])];
+  saveJSON('npk-dismissed-notifications', dismissedNotificationIds);
+  renderNotificationChanges();
+};
+
+function renderNotificationChanges() {
+  renderAlerts();
+  renderConnectionState();
+  // Actualiza el modal ABIERTO sin cerrarlo ni perder la posición de desplazamiento.
+  const body = $('#modalBody');
+  const container = body?.querySelector('[data-notification-panel]');
+  if (container) {
+    const list = container.querySelector('.modal-alert-list');
+    const items = getNotificationItems();
+    if (list) list.innerHTML = items.length
+      ? items.map(alert => alertTemplate(alert, { dismissible: true })).join('')
+      : emptyState('No tienes notificaciones pendientes.');
+    const clear = container.querySelector('[data-delete-all-notifications]');
+    if (clear) clear.disabled = items.length === 0;
+  }
+}
 
 function showAlertRules() {
   showModal(`<h2>Reglas de alertas y notificaciones</h2>
@@ -1550,7 +1574,7 @@ function showAlertRules() {
 
 function showNotifications() {
   const items = getNotificationItems();
-  showModal(`<h2>Notificaciones</h2><p class="muted">Puedes eliminar una notificación. Las alertas activas desaparecen automáticamente cuando el dato vuelve al rango normal y quedan registradas en verde como resueltas.</p>${items.length ? `<div class="modal-alert-list">${items.map(alert => alertTemplate(alert, { dismissible: true })).join('')}</div>` : emptyState('No hay notificaciones reales por ahora.')}`);
+  showModal(`<div data-notification-panel><div class="notification-modal-head"><h2>Notificaciones</h2><button type="button" class="btn btn-small btn-outline" data-delete-all-notifications onclick="window.deleteAllNotifications()" ${items.length ? '' : 'disabled'}>Eliminar todo</button></div><p class="muted">Solo se muestran alertas activas relevantes. Al eliminar una, permanecerá oculta hasta que la condición desaparezca.</p><div class="modal-alert-list">${items.length ? items.map(alert => alertTemplate(alert, { dismissible: true })).join('') : emptyState('No tienes notificaciones pendientes.')}</div></div>`);
 }
 
 function renderHeatmapGrid() {
