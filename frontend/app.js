@@ -85,6 +85,11 @@ let weatherRadarLayer;
 let markerLayer;
 let heatLayers = {};
 let chartInstances = [];
+let analyticsHistory = [];
+let analyticsHistoryCacheKey = '';
+let analyticsLastLoaded = 0;
+let analyticsHistoryLoading = false;
+const ANALYTICS_HISTORY_REFRESH_MS = 30000;
 let pollTimer;
 let streamSource;
 let logSocket = null;
@@ -110,6 +115,7 @@ function init() {
   loadWeather();
   loadSensorsFromBackend({ silent: true });
   startPolling();
+  initAnalyticsHistory();
   startRealtimeStream();
   initLogsRealtime();
   initOtaRealtime();
@@ -281,6 +287,7 @@ function setView(viewName = 'dashboard') {
     }, 50);
   }
   if (['dashboard', 'meteorologia', 'estadisticas'].includes(normalized)) setTimeout(drawAllCharts, 80);
+  if (normalized === 'estadisticas') setTimeout(() => loadAnalyticsHistory({ force: true }), 100);
 }
 
 function initInteractions() {
@@ -330,7 +337,7 @@ function initInteractions() {
   $('#otaLoadManifestBtn')?.addEventListener('click', loadOtaManifest);
   $('#otaUseManifestBtn')?.addEventListener('click', useOtaManifest);
   $('#otaSha256')?.addEventListener('input', event => { event.target.value = event.target.value.replace(/[^0-9a-f]/gi, '').slice(0, 64); });
-  $('#refreshAnalyticsBtn')?.addEventListener('click', () => { loadSensorsFromBackend(); drawAllCharts(); });
+  $('#refreshAnalyticsBtn')?.addEventListener('click', async () => { await loadSensorsFromBackend({ silent: true }); await loadAnalyticsHistory({ force: true }); });
   $('#exportSensorsBtn')?.addEventListener('click', exportSensorsCSV);
   $('#addSensorBtn')?.addEventListener('click', openAddSensorModal);
   $('#updateSensorBtn')?.addEventListener('click', openUpdateSensorModal);
@@ -560,6 +567,7 @@ function renderAll() {
   renderLandingStats();
   renderSelections();
   renderDashboard();
+  updateAnalyticsSensorOptions();
   renderSensorsTable();
   renderAlerts();
   renderReportsList();
@@ -863,7 +871,10 @@ async function loadSensorsFromBackend({ silent = false } = {}) {
 
 function startPolling() {
   clearInterval(pollTimer);
-  pollTimer = setInterval(() => loadSensorsFromBackend({ silent: true }), API_CONFIG.pollIntervalMs);
+  pollTimer = setInterval(() => {
+    loadSensorsFromBackend({ silent: true });
+    if (state.currentView === 'estadisticas') loadAnalyticsHistory();
+  }, API_CONFIG.pollIntervalMs);
 }
 
 function startRealtimeStream() {
@@ -1662,14 +1673,80 @@ function countStatuses(rows = getAllSensors()) {
   return ['conectado', 'critico', 'no_conectado', 'mantenimiento'].map(status => rows.filter(s => normalizeUiStatus(s.status) === status).length);
 }
 
+function initAnalyticsHistory() {
+  $('#analyticsSensorId')?.addEventListener('change', () => loadAnalyticsHistory({ force: true }));
+  $('#analyticsTimeRange')?.addEventListener('change', () => loadAnalyticsHistory({ force: true }));
+  updateAnalyticsSensorOptions();
+}
+
+function updateAnalyticsSensorOptions() {
+  const select = $('#analyticsSensorId');
+  if (!select) return;
+  const sensors = getAllSensors().filter(s => s.fromBackend && s.realData);
+  const selected = select.value;
+  const available = new Set(sensors.map(s => s.originalId));
+  if (select.options.length === sensors.length + 1 && [...available].every(id => [...select.options].some(o => o.value === id))) return;
+  select.innerHTML = '<option value="">Seleccionar sensor</option>' + sensors.map(s =>
+    `<option value="${escapeAttr(s.originalId)}">${escapeHtml(s.name || s.id)} (${escapeHtml(s.id)})</option>`).join('');
+  select.value = available.has(selected) ? selected : (sensors[0]?.originalId || '');
+}
+
+async function loadAnalyticsHistory({ force = false } = {}) {
+  if (state.currentView !== 'estadisticas') return;
+  updateAnalyticsSensorOptions();
+  const sensorId = $('#analyticsSensorId')?.value;
+  const hours = Number($('#analyticsTimeRange')?.value || 24);
+  const status = $('#analyticsHistoryStatus');
+  if (!sensorId) {
+    analyticsHistory = [];
+    if (status) status.textContent = 'No hay sensores con lecturas disponibles.';
+    drawAllCharts();
+    return;
+  }
+  const key = `${sensorId}:${hours}`;
+  if (analyticsHistoryLoading) return;
+  if (!force && key === analyticsHistoryCacheKey && Date.now() - analyticsLastLoaded < ANALYTICS_HISTORY_REFRESH_MS) return;
+  analyticsHistoryLoading = true;
+  if (status) status.textContent = 'Consultando historial…';
+  try {
+    const endpoint = `/api/sensor/${encodeURIComponent(sensorId)}/history`;
+    const start = new Date(Date.now() - hours * 3600000).toISOString();
+    const result = await fetchWithTimeout(buildUrlWithParams(endpoint, { start, source: 'todos', limit: 2000 }),
+      { headers: { Accept: 'application/json' } }, 12000);
+    if (!result.ok) throw new Error(`HTTP ${result.status}`);
+    const payload = await result.json();
+    const minTime = Date.now() - hours * 3600000;
+    const dedup = new Map();
+    extractSensorRows(payload).map(normalizeSensorReading).filter(Boolean).forEach(item => {
+      const time = new Date(item.timestamp).getTime();
+      if (Number.isFinite(time) && time >= minTime && item.originalId === sensorId)
+        dedup.set(String(item.raw?._id || item.timestamp), { ...item, time });
+    });
+    const sorted = [...dedup.values()].sort((a,b) => a.time - b.time);
+    // Reducir puntos solamente para dibujar, sin fabricar valores intermedios.
+    const step = Math.max(1, Math.ceil(sorted.length / 300));
+    analyticsHistory = sorted.filter((item, i) => i % step === 0 || i === sorted.length - 1);
+    analyticsHistoryCacheKey = key;
+    analyticsLastLoaded = Date.now();
+    if (status) status.textContent = `${sorted.length} lecturas · ${analyticsHistory.length} puntos visibles · ${sensorId}`;
+  } catch (error) {
+    analyticsHistory = [];
+    if (status) status.textContent = `No se pudo cargar el historial: ${error.message}`;
+    console.warn('Historial de analíticas:', error);
+  } finally {
+    analyticsHistoryLoading = false;
+    drawAllCharts();
+  }
+}
+
 function createAnalyticsCharts() {
   const rows = getScopedSensors({ realOnly: true });
   const bar = $('#barChart');
   const area = $('#areaChart');
+  const npkTime = $('#npkTimeChart');
   const alertDonut = $('#alertDonutChart');
   if (!rows.length) {
-    [bar, area, alertDonut].forEach(ctx => ctx && setChartEmpty(ctx, 'Sin datos reales para analítica.'));
-    return;
+    [bar, alertDonut].forEach(ctx => ctx && setChartEmpty(ctx, 'Sin datos reales para analítica.'));
   }
   if (bar) {
     clearChartEmpty(bar);
@@ -1683,11 +1760,31 @@ function createAnalyticsCharts() {
       options: baseOptions()
     }));
   }
+  const history = analyticsHistory;
+  const labels = history.map(item => new Date(item.timestamp).toLocaleString('es-CO', {
+    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit'
+  }));
   if (area) {
-    clearChartEmpty(area);
-    chartInstances.push(new Chart(area, { type: 'line', data: { labels: rows.map(s => s.id), datasets: [{ label: 'Humedad %', data: rows.map(s => s.soilHumidity ?? s.humidity), fill: true, tension: 0.45 }] }, options: baseOptions() }));
+    if (!history.some(item => item.soilHumidity !== null)) setChartEmpty(area, 'Sin historial de humedad para el período seleccionado.');
+    else {
+      clearChartEmpty(area);
+      chartInstances.push(new Chart(area, { type: 'line', data: { labels,
+        datasets: [{ label: 'Humedad del suelo (%)', data: history.map(item => item.soilHumidity), borderColor: '#2a9bb7', backgroundColor: 'rgba(42,155,183,.12)', fill: true, tension: 0.3, pointRadius: history.length > 90 ? 0 : 2, spanGaps: false }] },
+        options: baseOptions({ scales: { x: { ticks: { maxTicksLimit: 8 }, grid: { color: 'rgba(160,178,171,.12)' } }, y: { min: 0, max: 100, title: { display: true, text: 'Humedad (%)' } } } }) }));
+    }
   }
-  if (alertDonut) {
+  if (npkTime) {
+    if (!history.some(item => [item.n, item.p, item.k].some(Number.isFinite))) setChartEmpty(npkTime, 'Sin historial NPK para el período seleccionado.');
+    else {
+      clearChartEmpty(npkTime);
+      chartInstances.push(new Chart(npkTime, { type: 'line', data: { labels, datasets: [
+        { label: 'Nitrógeno', data: history.map(item => item.n), borderColor: '#20a872', tension: .3, pointRadius: history.length > 90 ? 0 : 2, spanGaps: false },
+        { label: 'Fósforo', data: history.map(item => item.p), borderColor: '#d9a136', tension: .3, pointRadius: history.length > 90 ? 0 : 2, spanGaps: false },
+        { label: 'Potasio', data: history.map(item => item.k), borderColor: '#8069d8', tension: .3, pointRadius: history.length > 90 ? 0 : 2, spanGaps: false }
+      ] }, options: baseOptions({ scales: { x: { ticks: { maxTicksLimit: 8 }, grid: { color: 'rgba(160,178,171,.12)' } }, y: { beginAtZero: true, title: { display: true, text: 'NPK (unidad reportada por sensor)' } } } }) }));
+    }
+  }
+  if (alertDonut && rows.length) {
     clearChartEmpty(alertDonut);
     const alerts = getActiveAlerts(rows);
     const labels = ['N bajo', 'P bajo', 'K bajo', 'Humedad', 'Temperatura', 'Conexión', 'Informativas'];

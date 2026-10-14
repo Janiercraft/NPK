@@ -1101,3 +1101,10 @@ input:focus, select:focus { border-color: rgba(31,209,154,.45); box-shadow: 0 0 
 @media (max-width:520px) {
   .notification-modal-head { align-items:flex-start; flex-wrap:wrap; padding-right:44px; }
 }
+
+/* Analíticas: selector de sensor y período del historial */
+.analytics-time-controls { display:flex; align-items:end; flex-wrap:wrap; gap:14px; margin-bottom:16px; }
+.analytics-time-controls label { display:flex; flex-direction:column; gap:6px; font-weight:600; font-size:.88rem; }
+.analytics-time-controls select { min-width:170px; max-width:100%; padding:9px 12px; border:1px solid var(--border, #cad6d0); border-radius:9px; background:var(--card, transparent); color:inherit; }
+.analytics-time-controls #analyticsHistoryStatus { flex:1; min-width:190px; font-size:.85rem; }
+@media (max-width:600px) { .analytics-time-controls label, .analytics-time-controls select { width:100%; } }

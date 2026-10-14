@@ -250,9 +250,15 @@
 
         <section class="view" id="view-estadisticas" data-search-keywords="analiticas graficas estadisticas npk humedad sensores datos reales">
           <div class="view-head"><div><span class="section-kicker">Analíticas</span><h1>Analíticas interactivas reales</h1><p>Los gráficos aparecen solo si existen lecturas reales de sensores.</p></div><button class="btn btn-outline" id="refreshAnalyticsBtn">Actualizar analíticas</button></div>
+          <div class="analytics-time-controls panel">
+            <label for="analyticsSensorId">Sensor <select id="analyticsSensorId"><option value="">Seleccionar sensor</option></select></label>
+            <label for="analyticsTimeRange">Período <select id="analyticsTimeRange"><option value="1">Última hora</option><option value="6">Últimas 6 horas</option><option value="24" selected>Últimas 24 horas</option><option value="168">Últimos 7 días</option></select></label>
+            <span class="muted" id="analyticsHistoryStatus" aria-live="polite">Cargando historial…</span>
+          </div>
           <div class="dashboard-grid analytics-grid">
             <article class="panel chart-panel"><h3>NPK por sensor</h3><canvas id="barChart" height="180"></canvas></article>
-            <article class="panel chart-panel"><h3>Humedad por sensor</h3><canvas id="areaChart" height="180"></canvas></article>
+            <article class="panel chart-panel"><h3>Humedad del suelo vs. tiempo</h3><canvas id="areaChart" height="180"></canvas></article>
+            <article class="panel chart-panel"><h3>NPK vs. tiempo</h3><canvas id="npkTimeChart" height="180"></canvas></article>
             <article class="panel chart-panel"><h3>Alertas por tipo</h3><canvas id="alertDonutChart" height="180"></canvas></article>
             <article class="panel"><h3>Matriz nutricional</h3><div class="heatmap-grid" id="heatmapGrid"></div></article>
           </div>
