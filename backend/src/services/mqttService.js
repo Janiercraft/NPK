@@ -249,6 +249,20 @@ client.on("message", async (topic, message) => {
       temperatura_ambiente
     });
 
+    // Solo aceptar coordenadas completas y válidas; no inferir ubicación desde IP.
+    const latitudeRaw = data.lat ?? data.latitude ?? data.latitud;
+    const longitudeRaw = data.lng ?? data.lon ?? data.longitude ?? data.longitud;
+    const latCandidate = toOptionalNumber(latitudeRaw);
+    const lngCandidate = toOptionalNumber(longitudeRaw);
+    const hasValidLocation = latCandidate !== null && lngCandidate !== null &&
+      Number.isFinite(latCandidate) && Number.isFinite(lngCandidate) &&
+      latCandidate >= -90 && latCandidate <= 90 &&
+      lngCandidate >= -180 && lngCandidate <= 180;
+    const lat = hasValidLocation ? latCandidate : null;
+    const lng = hasValidLocation ? lngCandidate : null;
+    const location = hasValidLocation && typeof data.location === 'string'
+      ? data.location.slice(0, 120) : null;
+
     const saved = await SensorData.create({
       sensor_id: sensorId,
       nitrogeno,
@@ -256,6 +270,7 @@ client.on("message", async (topic, message) => {
       potasio,
       humedad_suelo,
       temperatura_ambiente,
+      lat, lng, location,
       timestamp: new Date()
     });
 
@@ -269,6 +284,9 @@ client.on("message", async (topic, message) => {
         potasio: saved.potasio,
         humedad_suelo: saved.humedad_suelo,
         temperatura_ambiente: saved.temperatura_ambiente,
+        lat: saved.lat,
+        lng: saved.lng,
+        location: saved.location,
         timestamp: saved.timestamp
       });
     }

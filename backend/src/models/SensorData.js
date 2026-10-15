@@ -31,6 +31,11 @@ const sensorSchema = new mongoose.Schema({
     default: null
   },
 
+  // Coordenadas opcionales declaradas por el dispositivo o simulador.
+  lat: { type: Number, min: -90, max: 90, default: null },
+  lng: { type: Number, min: -180, max: 180, default: null },
+  location: { type: String, default: null },
+
   timestamp: {
     type: Date,
     default: Date.now
