@@ -85,6 +85,26 @@ let weatherRadarLayer;
 let markerLayer;
 let heatLayers = {};
 let chartInstances = [];
+// Ventana temporal local: una muestra por timestamp y sensor, hasta 60 lecturas.
+const dashboardTimeSeries = new Map();
+const DASHBOARD_MAX_POINTS = 60;
+function captureDashboardReadings(rawRows) {
+  for (const raw of rawRows || []) {
+    const sensor = normalizeSensorReading(raw);
+    if (!sensor?.realData || !sensor.timestamp) continue;
+    const ms = new Date(sensor.timestamp).getTime();
+    if (!Number.isFinite(ms)) continue;
+    const id = sensor.originalId;
+    const series = dashboardTimeSeries.get(id) || [];
+    if (series.some(point => point.ms === ms)) continue;
+    series.push({ ms, n: sensor.n, p: sensor.p, k: sensor.k,
+      humidity: sensor.soilHumidity ?? sensor.humidity,
+      temperature: sensor.airTemp ?? sensor.temp });
+    series.sort((a, b) => a.ms - b.ms);
+    dashboardTimeSeries.set(id, series.slice(-DASHBOARD_MAX_POINTS));
+  }
+}
+
 let analyticsHistory = [];
 let analyticsHistoryCacheKey = '';
 let analyticsLastLoaded = 0;
@@ -799,6 +819,7 @@ async function syncLocalSensorById(sensorId, { silent = false } = {}) {
     sensor = await fetchBackendSensorById(sensorId);
     if (sensor?.raw) {
       sensorReadings = mergeRawReadings(sensorReadings, [sensor.raw]);
+      captureDashboardReadings([sensor.raw]);
       state.backendOnline = true;
       state.lastSync = new Date().toISOString();
       renderAll();
@@ -844,6 +865,7 @@ async function loadSensorsFromBackend({ silent = false } = {}) {
         sensorReadings = latestRows;
       }
 
+      captureDashboardReadings(latestRows);
       state.backendOnline = true;
       state.lastSync = new Date().toISOString();
       renderAll();
@@ -891,6 +913,7 @@ function startRealtimeStream() {
         const rows = extractSensorRows(payload).filter(item => item && typeof item === 'object');
         if (!rows.length) return;
         sensorReadings = mergeRawReadings(sensorReadings, rows);
+        captureDashboardReadings(rows);
         state.backendOnline = true;
         state.lastSync = new Date().toISOString();
         renderAll();
@@ -1633,23 +1656,30 @@ function createDashboardCharts() {
   const rows = getScopedSensors({ realOnly: true });
   const line = $('#npkLineChart');
   if (line) {
-    if (!rows.length) {
-      setChartEmpty(line, 'Sin datos reales de sensores.');
+    const selected = ($('#dashboardScope')?.value === 'sensor')
+      ? rows[0] : rows.find(s => (dashboardTimeSeries.get(s.originalId) || []).length) || rows[0];
+    const points = selected ? (dashboardTimeSeries.get(selected.originalId) || []) : [];
+    if (!points.length) {
+      setChartEmpty(line, 'Esperando lecturas con fecha para mostrar su evolución.');
     } else {
       clearChartEmpty(line);
+      const labels = points.map(point => new Date(point.ms).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       chartInstances.push(new Chart(line, {
         type: 'line',
         data: {
-          labels: rows.map(s => s.id),
+          labels,
           datasets: [
-            { label: 'Nitrógeno', data: rows.map(s => s.n), tension: 0.35, fill: false },
-            { label: 'Fósforo', data: rows.map(s => s.p), tension: 0.35, fill: false },
-            { label: 'Potasio', data: rows.map(s => s.k), tension: 0.35, fill: false },
-            { label: 'Humedad suelo %', data: rows.map(s => s.soilHumidity ?? s.humidity), tension: 0.35, fill: false },
-            { label: 'Temp. aire °C', data: rows.map(s => s.airTemp ?? s.temp), tension: 0.35, fill: false }
+            { label: 'Nitrógeno', data: points.map(p => p.n), tension: 0.3, spanGaps: false },
+            { label: 'Fósforo', data: points.map(p => p.p), tension: 0.3, spanGaps: false },
+            { label: 'Potasio', data: points.map(p => p.k), tension: 0.3, spanGaps: false },
+            { label: 'Humedad suelo %', data: points.map(p => p.humidity), tension: 0.3, spanGaps: false },
+            { label: 'Temp. aire °C', data: points.map(p => p.temperature), tension: 0.3, spanGaps: false }
           ]
         },
-        options: baseOptions()
+        options: baseOptions({ animation: false, plugins: {
+          legend: { labels: { usePointStyle: true, boxWidth: 8 } },
+          title: { display: !!selected, text: selected?.id || '' }
+        } })
       }));
     }
   }
